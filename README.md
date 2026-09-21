@@ -19,7 +19,7 @@ Windows and Apple Silicon are both first-class targets.
 | M2 — distill, highlight, anchoring, markdown export | done |
 | M3 — lens engine + 3 starter lenses | done |
 | M4 — Tauri + React desktop UI | done |
-| M5 — speaker diarization | not started |
+| M5 — speaker diarization | done |
 | M6 — packaging and installers | not started |
 | M7 — cross-note insights and search | not started |
 
@@ -37,6 +37,7 @@ Requires [uv](https://docs.astral.sh/uv/), [ffmpeg](https://ffmpeg.org/) and
 
 ```bash
 python scripts/fetch_whisper.py      # whisper.cpp binaries + large-v3-turbo (~1.9 GB)
+python scripts/fetch_diarize.py      # offline ONNX speaker diarization models (~35 MB)
 cd engine && uv sync
 uv run not3 doctor                   # confirms backends, models and tools
 ```

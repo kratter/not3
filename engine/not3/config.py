@@ -116,6 +116,10 @@ class Settings:
 
     # Diarization
     diarizer: str = "sherpa"  # sherpa | pyannote | off
+    diarize_segmentation_model: str = "sherpa-onnx-pyannote-segmentation-3-0.onnx"
+    diarize_embedding_model: str = "wespeaker_en_voxceleb_CAM++_LM.onnx"
+    diarize_threshold: float = 0.5
+    diarize_threads: int = 2
 
     # LLM
     ollama_url: str = "http://127.0.0.1:11434"
@@ -187,11 +191,22 @@ class Settings:
     def vad_model_path(self) -> Path:
         return self.models_dir / self.vad_model
 
+    @property
+    def diarize_models_dir(self) -> Path:
+        return self.models_dir / "diarize"
+
+    def diarize_segmentation_path(self) -> Path:
+        return self.diarize_models_dir / self.diarize_segmentation_model
+
+    def diarize_embedding_path(self) -> Path:
+        return self.diarize_models_dir / self.diarize_embedding_model
+
     def ensure_dirs(self) -> None:
         for d in (
             self.data_dir,
             self.media_dir,
             self.models_dir,
+            self.diarize_models_dir,
             self.user_lenses_dir,
             self.export_dir,
         ):

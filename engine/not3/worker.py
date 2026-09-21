@@ -24,7 +24,7 @@ from typing import Any
 from . import db
 from .config import Settings
 
-ALL_STAGES = ("transcribe", "distill", "highlight", "lens", "export")
+ALL_STAGES = ("transcribe", "diarize", "distill", "highlight", "lens", "export")
 
 
 @dataclass
@@ -228,6 +228,19 @@ class Worker:
             db.replace_segments(conn, job.note_id, [s.to_row() for s in tr.segments])
             db.update_note(conn, job.note_id, language=tr.language,
                            asr_backend=tr.backend, asr_model=tr.model)
+            return
+
+        if stage == "diarize":
+            if settings.diarizer == "off":
+                report(1.0, "diarization disabled")
+                return
+            from .pipeline.diarize import diarize_note
+            try:
+                num_spk = diarize_note(conn, job.note_id, settings, progress_cb=report)
+                report(1.0, f"{num_spk} speaker{'s' if num_spk != 1 else ''} found")
+            except (FileNotFoundError, RuntimeError) as exc:
+                # If models haven't been downloaded yet, warn and continue pipeline
+                report(1.0, f"diarization skipped: {exc}")
             return
 
         rows = db.get_segments(conn, job.note_id)

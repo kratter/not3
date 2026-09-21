@@ -53,6 +53,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         size = f"{path.stat().st_size / 1e6:.0f} MB" if path.is_file() else ""
         print(f"  {label:4} {mark} {path.name} {size}")
 
+    print("\ndiarizer:")
+    seg_path = s.diarize_segmentation_path()
+    emb_path = s.diarize_embedding_path()
+    seg_ok = seg_path.is_file()
+    emb_ok = emb_path.is_file()
+    print(f"  backend      {s.diarizer}")
+    print(f"  segmentation {'ok    ' if seg_ok else 'MISSING'} {seg_path.name} ({f'{seg_path.stat().st_size / 1e6:.1f} MB' if seg_ok else 'run scripts/fetch_diarize.py'})")
+    print(f"  embedding    {'ok    ' if emb_ok else 'MISSING'} {emb_path.name} ({f'{emb_path.stat().st_size / 1e6:.1f} MB' if emb_ok else 'run scripts/fetch_diarize.py'})")
+
     print("\ntools:")
     from .config import ffmpeg_bin, ffprobe_bin
     import shutil as _sh
@@ -251,6 +260,30 @@ def cmd_import_transcript(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_diarize(args: argparse.Namespace) -> int:
+    """Run speaker diarization on a note."""
+    from .pipeline.diarize import diarize_note
+
+    s = Settings.load()
+    conn = db.get(s.db_path)
+    if db.get_note(conn, args.note_id) is None:
+        print(f"no note {args.note_id}", file=sys.stderr)
+        return 1
+
+    t0 = time.perf_counter()
+
+    def progress(frac: float, message: str) -> None:
+        print(f"\r  diarize    {frac * 100:5.1f}%  {message:<30}", end="", flush=True)
+
+    try:
+        count = diarize_note(conn, args.note_id, s, progress_cb=progress)
+        print(f"\r  diarize    {time.perf_counter() - t0:5.1f}s  {count} speakers identified{'':<20}")
+        return 0
+    except Exception as exc:
+        print(f"\nerror: {exc}", file=sys.stderr)
+        return 1
+
+
 def cmd_process(args: argparse.Namespace) -> int:
     """Run the LLM stages over a note that has already been transcribed."""
     from .llm.chunker import to_chunk_segments
@@ -261,12 +294,12 @@ def cmd_process(args: argparse.Namespace) -> int:
 
     s = Settings.load()
     if args.model:
-        s.model_distill = s.model_highlight = s.model_lens = args.model
+        s.model_distill = args.model
+        s.model_highlight = args.model
     s.ensure_dirs()
     conn = db.get(s.db_path)
 
-    note = db.get_note(conn, args.note_id)
-    if note is None:
+    if db.get_note(conn, args.note_id) is None:
         print(f"no note {args.note_id}", file=sys.stderr)
         return 1
     rows = db.get_segments(conn, args.note_id)
@@ -288,6 +321,23 @@ def cmd_process(args: argparse.Namespace) -> int:
             db.set_job(conn, args.note_id, stage, progress=frac, message=message)
             print(f"\r  {stage:10} {frac * 100:5.1f}%  {message:<44}", end="", flush=True)
         return report
+
+    # -- diarize ----------------------------------------------------------
+    if not getattr(args, "no_diarize", False) and s.diarizer != "off":
+        note = db.get_note(conn, args.note_id)
+        if note and note["media_path"]:
+            db.set_job(conn, args.note_id, "diarize", state="running")
+            t0 = time.perf_counter()
+            from .pipeline.diarize import diarize_note
+            try:
+                num_spk = diarize_note(conn, args.note_id, s, progress_cb=progress("diarize"))
+                db.set_job(conn, args.note_id, "diarize", state="done", progress=1.0)
+                print(f"\r  diarize    {time.perf_counter() - t0:5.1f}s  {num_spk} speakers identified{'':<20}")
+                rows = db.get_segments(conn, args.note_id)
+                segments = to_chunk_segments(rows)
+            except Exception as exc:
+                db.set_job(conn, args.note_id, "diarize", state="error", error=str(exc))
+                print(f"\r  diarize    skipped: {exc}{'':<20}")
 
     # -- distill ----------------------------------------------------------
     db.set_job(conn, args.note_id, "distill", state="running")
@@ -534,8 +584,13 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--model", help="override the Ollama model for all LLM stages")
     pr.add_argument("--keep-title", action="store_true",
                     help="do not replace the title with the generated one")
+    pr.add_argument("--no-diarize", action="store_true", help="skip speaker diarization")
     pr.add_argument("--print", dest="print_note", action="store_true")
     pr.set_defaults(func=cmd_process)
+
+    di = sub.add_parser("diarize", help="run speaker diarization on a note")
+    di.add_argument("note_id", type=int)
+    di.set_defaults(func=cmd_diarize)
 
     sub.add_parser("lenses", help="list available lenses").set_defaults(func=cmd_lenses)
 

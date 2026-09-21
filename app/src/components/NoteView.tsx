@@ -193,6 +193,10 @@ export function NoteView({
             highlights={data.highlights}
             player={player}
             focusSegmentId={focusSegment}
+            onRenameSpeaker={async (speakerId, newName) => {
+              await api.renameSpeaker(speakerId, newName);
+              onChanged();
+            }}
           />
         )}
         {tab === "highlights" && (
@@ -217,7 +221,7 @@ export function NoteView({
 }
 
 function StageStrip({ jobs }: { jobs: NoteData["jobs"] }) {
-  const shown = jobs.filter((j) => j.stage !== "embed" && j.stage !== "diarize");
+  const shown = jobs.filter((j) => j.stage !== "embed");
   if (shown.length === 0) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-1">

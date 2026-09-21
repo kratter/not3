@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Highlight, Segment, Speaker } from "../api";
 import type { Player } from "../hooks";
@@ -12,17 +12,20 @@ import { cx, speakerHue, ts } from "../util";
  * against the recording in one click.
  */
 export function Transcript({
-  segments, speakers, highlights, player, focusSegmentId,
+  segments, speakers, highlights, player, focusSegmentId, onRenameSpeaker,
 }: {
   segments: Segment[];
   speakers: Speaker[];
   highlights: Highlight[];
   player: Player;
   focusSegmentId: number | null;
+  onRenameSpeaker?: (speakerId: number, newName: string) => Promise<void>;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLDivElement>(null);
   const userScrolled = useRef(false);
+  const [editingSpeakerId, setEditingSpeakerId] = useState<number | null>(null);
+  const [draftName, setDraftName] = useState("");
 
   const highlighted = useMemo(
     () => new Set(highlights.map((h) => h.segment_id)),
@@ -87,13 +90,49 @@ export function Transcript({
 
         return (
           <div key={segment.id} data-segment={segment.id}>
-            {speakerChanged && name && (
-              <p
-                className="mb-1 mt-4 text-[11px] font-semibold uppercase tracking-wide"
-                style={{ color: `hsl(${hue} 60% 62%)` }}
-              >
-                {name}
-              </p>
+            {speakerChanged && name && segment.speaker_id != null && (
+              <div className="mb-1 mt-4 flex items-center gap-2">
+                {editingSpeakerId === segment.speaker_id ? (
+                  <input
+                    autoFocus
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    onBlur={async () => {
+                      const next = draftName.trim();
+                      if (next && next !== name && onRenameSpeaker) {
+                        await onRenameSpeaker(segment.speaker_id!, next);
+                      }
+                      setEditingSpeakerId(null);
+                    }}
+                    onKeyDown={async (e) => {
+                      if (e.key === "Enter") {
+                        const next = draftName.trim();
+                        if (next && next !== name && onRenameSpeaker) {
+                          await onRenameSpeaker(segment.speaker_id!, next);
+                        }
+                        setEditingSpeakerId(null);
+                      } else if (e.key === "Escape") {
+                        setEditingSpeakerId(null);
+                      }
+                    }}
+                    className="rounded border border-[var(--accent)] bg-[var(--bg-inset)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--text)] uppercase tracking-wide focus:outline-none"
+                  />
+                ) : (
+                  <p
+                    onClick={() => {
+                      if (onRenameSpeaker) {
+                        setEditingSpeakerId(segment.speaker_id);
+                        setDraftName(name);
+                      }
+                    }}
+                    title="Click to rename speaker"
+                    className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide transition-opacity hover:opacity-80"
+                    style={{ color: `hsl(${hue} 60% 62%)` }}
+                  >
+                    {name}
+                  </p>
+                )}
+              </div>
             )}
             <div
               ref={active ? activeRef : undefined}
