@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 
 import type { Api, Note, SearchHit } from "../api";
 import { cx, duration, relativeDate, ts } from "../util";
+import { ManualNoteModal } from "./ManualNoteModal";
 import { Button, Chip, Icon, Spinner } from "./ui";
 
 const AUDIO_EXTENSIONS = [
@@ -25,6 +26,7 @@ export function Sidebar({
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [importing, setImporting] = useState(false);
+  const [showWriteModal, setShowWriteModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Full-text search across every note, debounced so typing stays smooth.
@@ -70,10 +72,18 @@ export function Sidebar({
         </Button>
       </div>
 
-      <div className="px-3 pb-2">
-        <Button variant="solid" onClick={() => void pickFile()} disabled={importing}>
+      <div className="flex gap-2 px-3 pb-2">
+        <Button variant="solid" onClick={() => void pickFile()} disabled={importing} className="flex-1">
           {importing ? <Spinner /> : <Icon name="plus" className="h-3.5 w-3.5" />}
           {importing ? "Importing…" : "Add recording"}
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => setShowWriteModal(true)}
+          title="Write manual note or paste shorthand"
+        >
+          <Icon name="pencil" className="h-3.5 w-3.5" />
+          Write
         </Button>
       </div>
 
@@ -121,6 +131,16 @@ export function Sidebar({
           ))
         )}
       </div>
+
+      <ManualNoteModal
+        api={api}
+        isOpen={showWriteModal}
+        onClose={() => setShowWriteModal(false)}
+        onCreated={(id) => {
+          onSelect(id);
+          onImported();
+        }}
+      />
     </aside>
   );
 }

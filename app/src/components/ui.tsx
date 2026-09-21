@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cx } from "../util";
 
 export function Button({
-  children, onClick, variant = "ghost", size = "md", disabled, title, active,
+  children, onClick, variant = "ghost", size = "md", disabled, title, active, className, type = "button",
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -11,9 +11,11 @@ export function Button({
   disabled?: boolean;
   title?: string;
   active?: boolean;
+  className?: string;
+  type?: "button" | "submit" | "reset";
 }) {
   const base =
-    "inline-flex items-center gap-1.5 rounded-md font-medium transition-colors " +
+    "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors " +
     "disabled:opacity-40 disabled:pointer-events-none whitespace-nowrap";
   const sizes = { sm: "px-2 py-1 text-xs", md: "px-3 py-1.5 text-[13px]" };
   const variants = {
@@ -26,13 +28,14 @@ export function Button({
   };
   return (
     <button
-      type="button"
+      type={type}
       onClick={onClick}
       disabled={disabled}
       title={title}
       className={cx(
         base, sizes[size], variants[variant],
         active && "bg-[var(--accent-wash)] text-[var(--accent)]",
+        className,
       )}
     >
       {children}
@@ -167,7 +170,7 @@ export function Icon({ name, className }: { name: IconName; className?: string }
 }
 
 export type IconName =
-  | "play" | "pause" | "back" | "forward" | "plus" | "search" | "settings"
+  | "play" | "pause" | "back" | "forward" | "plus" | "pencil" | "search" | "settings"
   | "trash" | "refresh" | "sun" | "moon" | "quote" | "lens" | "export" | "alert";
 
 const PATHS: Record<IconName, ReactNode> = {
@@ -177,6 +180,7 @@ const PATHS: Record<IconName, ReactNode> = {
   back: <><path d="M11 4v16L3 12z" fill="currentColor" stroke="none" /><path d="M20 4v16" /></>,
   forward: <><path d="M13 4v16l8-8z" fill="currentColor" stroke="none" /><path d="M4 4v16" /></>,
   plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
+  pencil: <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />,
   search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
   settings: <><circle cx="12" cy="12" r="3" />
              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,

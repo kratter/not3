@@ -52,6 +52,15 @@ class ImportRequest(BaseModel):
     stages: list[str] | None = None
 
 
+class TextNoteRequest(BaseModel):
+    title: str | None = None
+    text: str
+    formalize: bool = True
+    style: str = "formal"
+    run: bool = True
+    stages: list[str] | None = None
+
+
 class RunRequest(BaseModel):
     stages: list[str] | None = None
 
@@ -221,6 +230,90 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             worker.submit(note_id, req.stages or ALL_STAGES)
         return {"note_id": note_id, "duplicate": False}
 
+    @app.post("/api/notes/text", dependencies=guard)
+    def create_text_note(req: TextNoteRequest) -> dict:
+        import hashlib
+        from .llm.ollama import LlmError
+        from .pipeline.formalize import formalize_notes, text_to_segments
+
+        raw_text = req.text.strip()
+        if not raw_text:
+            raise HTTPException(status_code=400, detail="Note text cannot be empty.")
+
+        s = Settings.load()
+        final_text = raw_text
+        if req.formalize:
+            try:
+                final_text = formalize_notes(raw_text, style=req.style, settings=s)
+            except LlmError as exc:
+                raise HTTPException(status_code=502, detail=f"Formalization error: {exc}") from exc
+
+        rows, duration_ms = text_to_segments(final_text)
+        if not rows:
+            raise HTTPException(status_code=400, detail="No readable text found.")
+
+        digest = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
+        c = conn()
+        existing = db.find_note_by_hash(c, digest)
+        if existing:
+            return {"note_id": int(existing["id"]), "duplicate": True}
+
+        title = req.title.strip() if req.title and req.title.strip() else ""
+        if not title:
+            first_line = rows[0]["text"]
+            title = first_line[:60].strip()
+
+        note_id = db.create_note(
+            c,
+            source_path="<manual>",
+            source_name=f"{title}.txt" if title else "manual_note.txt",
+            source_hash=digest,
+            media_path="",
+            duration_ms=duration_ms,
+            title=title,
+        )
+
+        db.replace_segments(c, note_id, [
+            {k: v for k, v in r.items() if not k.startswith("_")} for r in rows
+        ])
+
+        speakers = {r["_speaker"]: None for r in rows if r.get("_speaker")}
+        if speakers:
+            with db.tx(c):
+                for label in speakers:
+                    c.execute(
+                        "INSERT OR IGNORE INTO speakers (note_id, label, display_name) "
+                        "VALUES (?, ?, ?)", (note_id, label, label))
+            mapping = {
+                r["label"]: r["id"] for r in c.execute(
+                    "SELECT id, label FROM speakers WHERE note_id = ?", (note_id,)).fetchall()
+            }
+            with db.tx(c):
+                for r in rows:
+                    if sid := mapping.get(r.get("_speaker")):
+                        c.execute(
+                            "UPDATE segments SET speaker_id = ? WHERE note_id = ? AND idx = ?",
+                            (sid, note_id, r["idx"]))
+
+        db.update_note(
+            c,
+            note_id,
+            asr_backend="manual",
+            asr_model="formalized" if req.formalize else "raw",
+            language=s.language or "en",
+        )
+
+        db.init_jobs(c, note_id)
+        db.set_job(c, note_id, "ingest", state="done", progress=1.0)
+        db.set_job(c, note_id, "transcribe", state="skipped")
+        db.set_job(c, note_id, "diarize", state="skipped")
+
+        if req.run:
+            stages = req.stages or ["distill", "highlight", "lens", "export"]
+            worker.submit(note_id, stages)
+
+        return {"note_id": note_id, "duplicate": False}
+
     @app.get("/api/notes/{note_id}", dependencies=guard)
     def get_note(note_id: int) -> dict:
         c = conn()
@@ -270,9 +363,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/notes/{note_id}/run", dependencies=guard)
     def run_stages(note_id: int, req: RunRequest) -> dict:
         c = conn()
-        if db.get_note(c, note_id) is None:
+        note = db.get_note(c, note_id)
+        if note is None:
             raise HTTPException(status_code=404, detail="no such note")
-        stages = tuple(req.stages) if req.stages else ALL_STAGES
+        if req.stages:
+            stages = tuple(req.stages)
+        elif not note["media_path"] or note["asr_backend"] == "manual":
+            stages = ("distill", "highlight", "lens", "export")
+        else:
+            stages = ALL_STAGES
         unknown = set(stages) - set(ALL_STAGES)
         if unknown:
             raise HTTPException(status_code=400, detail=f"unknown stages: {sorted(unknown)}")

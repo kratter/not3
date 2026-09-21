@@ -260,6 +260,131 @@ def cmd_import_transcript(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_write(args: argparse.Namespace) -> int:
+    """Create a note from manual shorthand notes, optionally formalizing with an LLM."""
+    import hashlib
+    from .pipeline.formalize import formalize_notes, text_to_segments
+    from .llm.ollama import LlmError
+
+    s = Settings.load()
+    s.ensure_dirs()
+    conn = db.get(s.db_path)
+
+    raw_text = ""
+    if args.text:
+        raw_text = args.text
+    elif args.file:
+        path = Path(args.file)
+        if not path.is_file():
+            print(f"no such file: {path}", file=sys.stderr)
+            return 1
+        raw_text = path.read_text(encoding="utf-8")
+    elif not sys.stdin.isatty():
+        raw_text = sys.stdin.read()
+    else:
+        print("error: provide notes with --text, --file, or via stdin pipe", file=sys.stderr)
+        return 1
+
+    raw_text = raw_text.strip()
+    if not raw_text:
+        print("error: note text cannot be empty", file=sys.stderr)
+        return 1
+
+    final_text = raw_text
+    if not args.no_formalize:
+        client = s.llm_client()
+        if not client.available():
+            print(f"error: cannot reach Ollama at {s.ollama_url} for formalization", file=sys.stderr)
+            return 1
+        print("formalizing notes with LLM...")
+        t0 = time.perf_counter()
+        try:
+            final_text = formalize_notes(raw_text, style=args.style, client=client,
+                                         model=args.model, settings=s)
+        except LlmError as exc:
+            print(f"formalization error: {exc}", file=sys.stderr)
+            return 1
+        print(f"formalized in {time.perf_counter() - t0:.1f}s")
+        if getattr(args, "verbose", False):
+            print(f"\nFormalized prose:\n{final_text}\n")
+
+    rows, cursor_ms = text_to_segments(final_text)
+    if not rows:
+        print("error: no segments produced from text", file=sys.stderr)
+        return 1
+
+    digest = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
+    existing = db.find_note_by_hash(conn, digest)
+    if existing:
+        if getattr(args, "force", False):
+            db.delete_note(conn, int(existing["id"]))
+        else:
+            print(f"note already exists as note #{existing['id']} (use --force to overwrite)")
+            return 0
+
+    title = args.title.strip() if args.title and args.title.strip() else ""
+    if not title:
+        title = rows[0]["text"][:60].strip()
+
+    note_id = db.create_note(
+        conn,
+        source_path="<manual>",
+        source_name=f"{title}.txt",
+        source_hash=digest,
+        media_path="",
+        duration_ms=cursor_ms,
+        title=title,
+    )
+    db.init_jobs(conn, note_id)
+    db.set_job(conn, note_id, "ingest", state="done", progress=1.0)
+    db.set_job(conn, note_id, "transcribe", state="skipped")
+    db.set_job(conn, note_id, "diarize", state="skipped")
+
+    db.replace_segments(conn, note_id, [
+        {k: v for k, v in r.items() if not k.startswith("_")} for r in rows
+    ])
+
+    speakers = {r["_speaker"]: None for r in rows if r.get("_speaker")}
+    if speakers:
+        with db.tx(conn):
+            for label in speakers:
+                conn.execute(
+                    "INSERT OR IGNORE INTO speakers (note_id, label, display_name) "
+                    "VALUES (?, ?, ?)", (note_id, label, label))
+        mapping = {
+            r["label"]: r["id"] for r in conn.execute(
+                "SELECT id, label FROM speakers WHERE note_id = ?", (note_id,)).fetchall()
+        }
+        with db.tx(conn):
+            for r in rows:
+                if sid := mapping.get(r.get("_speaker")):
+                    conn.execute(
+                        "UPDATE segments SET speaker_id = ? WHERE note_id = ? AND idx = ?",
+                        (sid, note_id, r["idx"]))
+
+    db.update_note(
+        conn,
+        note_id,
+        status="ready" if args.no_process else "processing",
+        asr_backend="manual",
+        asr_model="formalized" if not args.no_formalize else "raw",
+        language=s.language or "en",
+    )
+    print(f"note {note_id}: {len(rows)} segments, {_fmt_dur(cursor_ms)} simulated")
+
+    if not args.no_process:
+        from argparse import Namespace
+        proc_args = Namespace(
+            note_id=note_id,
+            model=args.model,
+            keep_title=bool(args.title),
+            no_diarize=True,
+            print_note=getattr(args, "print_note", False),
+        )
+        return cmd_process(proc_args)
+    return 0
+
+
 def cmd_diarize(args: argparse.Namespace) -> int:
     """Run speaker diarization on a note."""
     from .pipeline.diarize import diarize_note
@@ -578,6 +703,20 @@ def main(argv: list[str] | None = None) -> int:
                         help="create a note from a plain-text transcript (no audio)")
     it.add_argument("file")
     it.set_defaults(func=cmd_import_transcript)
+
+    wr = sub.add_parser("write", help="create a note from manual shorthand notes (with AI formalizer)")
+    wr.add_argument("--text", help="raw note text")
+    wr.add_argument("--file", help="path to a text or markdown file containing notes")
+    wr.add_argument("--title", help="custom title for the note")
+    wr.add_argument("--style", choices=["formal", "technical", "bullet_structured"], default="formal",
+                    help="formalization style (default: formal)")
+    wr.add_argument("--no-formalize", action="store_true", help="keep raw notes without AI rewriting")
+    wr.add_argument("--no-process", action="store_true", help="skip distillation, highlights and lenses")
+    wr.add_argument("--force", action="store_true", help="overwrite existing note if duplicate")
+    wr.add_argument("--model", help="override LLM model for formalization/distillation")
+    wr.add_argument("-v", "--verbose", action="store_true", help="print formalized text")
+    wr.add_argument("--print", dest="print_note", action="store_true", help="print generated note summary")
+    wr.set_defaults(func=cmd_write)
 
     pr = sub.add_parser("process", help="distill, highlight and export a transcribed note")
     pr.add_argument("note_id", type=int)

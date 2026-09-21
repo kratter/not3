@@ -240,6 +240,21 @@ export class Api {
       stages,
     });
 
+  createTextNote = (req: {
+    title?: string;
+    text: string;
+    formalize?: boolean;
+    style?: string;
+    run?: boolean;
+    stages?: string[];
+  }) =>
+    this.post<{ note_id: number; duplicate: boolean }>("/api/notes/text", {
+      run: true,
+      formalize: true,
+      style: "formal",
+      ...req,
+    });
+
   run = (id: number, stages?: string[]) =>
     this.post<{ queued: number }>(`/api/notes/${id}/run`, { stages });
   cancel = (id: number) => this.post<{ cancelled: boolean }>(`/api/notes/${id}/cancel`);

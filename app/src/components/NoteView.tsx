@@ -121,8 +121,12 @@ export function NoteView({
             </>
           )}
           {note.asr_backend && (
-            <Chip tone={note.asr_backend === "cuda" ? "good" : "neutral"}>
-              {note.asr_backend}
+            <Chip tone={note.asr_backend === "cuda" ? "good" : note.asr_backend === "manual" ? "accent" : "neutral"}>
+              {note.asr_backend === "manual"
+                ? note.asr_model === "formalized"
+                  ? "formalized note"
+                  : "manual note"
+                : note.asr_backend}
             </Chip>
           )}
           <div className="flex-1" />
