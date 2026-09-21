@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+/* Dark by default: this is a long-session reading tool, and the transcript is
+   the thing you look at for an hour. Light is available and honoured. */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+}
+
+:root {
+  --bg: #0e0e12;
+  --bg-raised: #16161d;
+  --bg-inset: #0a0a0e;
+  --border: #26262f;
+  --border-strong: #35353f;
+  --text: #e8e6f0;
+  --text-dim: #a09eb0;
+  --text-faint: #6b6879;
+  --accent: #8c78ff;
+  --accent-dim: #6a58d6;
+  --accent-wash: #8c78ff1a;
+  --good: #4ec9a0;
+  --warn: #e0a458;
+  --bad: #e5646d;
+  --mark: #e0a45833;
+}
+
+:root[data-theme="light"] {
+  --bg: #fbfbfd;
+  --bg-raised: #ffffff;
+  --bg-inset: #f2f2f6;
+  --border: #e2e2e9;
+  --border-strong: #cfcfd8;
+  --text: #1a1a22;
+  --text-dim: #5b5b68;
+  --text-faint: #8b8b98;
+  --accent: #6244e0;
+  --accent-dim: #4c34b8;
+  --accent-wash: #6244e014;
+  --good: #16a37b;
+  --warn: #b57420;
+  --bad: #c9414b;
+  --mark: #e0a45844;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* The app is a desktop shell; text selection on chrome reads as a bug. */
+.select-none-ui {
+  user-select: none;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 5px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+mark {
+  background: var(--mark);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.pulse { animation: pulse-soft 1.6s ease-in-out infinite; }
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.enter { animation: slide-up 0.18s ease-out; }
+
+/* Focus ring that reads on both themes without being shouty. */
+:where(button, a, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

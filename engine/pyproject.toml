@@ -1,0 +1,41 @@
+[project]
+name = "not3-engine"
+version = "0.1.0"
+description = "Local-first audio -> structured note engine for Not3"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.118",
+    "uvicorn[standard]>=0.38",
+    "sse-starlette>=2.1",
+    "pydantic>=2.9",
+    "httpx>=0.28",
+    "pyyaml>=6.0",
+    "rapidfuzz>=3.10",
+    "psutil>=6.0",
+]
+
+[project.optional-dependencies]
+# Default diarizer: ONNX, no torch, ships in the base install.
+diarize = ["sherpa-onnx>=1.10"]
+# Optional accuracy upgrade, delivered as a post-install download.
+diarize-pyannote = ["pyannote.audio==4.0.7", "torch==2.11.0", "torchaudio==2.11.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+
+[project.scripts]
+not3 = "not3.cli:main"
+not3-engine = "not3.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["not3"]
+
+[tool.pytest.ini_options]
+testpaths = ["../tests"]
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.4.0",
+]

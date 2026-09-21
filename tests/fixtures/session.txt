@@ -1,0 +1,42 @@
+# A coaching conversation, written as a test fixture.
+#
+# Deliberately seeded with material for each starter lens:
+#   - cognitive distortions: all-or-nothing, catastrophizing, mind reading,
+#     overgeneralization, and near-misses that must NOT be flagged
+#   - emotional arc: opens distressed, resolves calmer
+#   - communication patterns: an interruption, hedging, a repair attempt
+# Two genuine commitments appear near the end; everything else that sounds
+# action-shaped is deliberately only discussion.
+
+Maya: So the presentation was Thursday and I've been sitting with it since.
+Sam: How are you sitting with it?
+Maya: Badly. I completely destroyed any chance I had at that promotion.
+Sam: Destroyed it.
+Maya: I always do this. Every single time something matters, I fall apart.
+Sam: Every time?
+Maya: Well. Not every time. The Henderson pitch went fine, I suppose.
+Sam: What happened on Thursday specifically?
+Maya: I lost my place in the middle section. About twenty seconds of nothing.
+Sam: Twenty seconds.
+Maya: It felt like an hour. And I could see Priya looking at her laptop, she had already written me off.
+Sam: What makes you say she had written you off?
+Maya: You could just tell. People don't look away like that unless they've decided.
+Sam: Did she say anything afterwards?
+Maya: She said the framing in the second half was the clearest she'd heard it. But she was being polite.
+Sam: You're treating the twenty seconds as the whole presentation.
+Maya: Because that's the part everyone remembers. Now I'll never be considered for anything senior, and honestly I should probably start looking elsewhere before they push me out.
+Sam: That's a long way from twenty seconds.
+Maya: I know how it sounds.
+Sam: What did the rest of the room do?
+Maya: They — sorry, can I say something first?
+Sam: Go ahead.
+Maya: I think part of why it landed so hard is I hadn't slept. I'd been rewriting it until two.
+Sam: That seems worth sitting with.
+Maya: It's a bit of a pattern, maybe. I sort of over-prepare and then I'm too tired to actually deliver.
+Sam: What would it look like to stop rewriting at a fixed time?
+Maya: Ten o'clock, probably. I'd hate it, but I could do it.
+Maya: Okay. I'll stop at ten the night before the next one. I'll put it in the calendar.
+Sam: And the thing with Priya?
+Maya: I'll ask her directly what she thought. That's terrifying but it's better than guessing.
+Sam: How does the Thursday thing feel now, compared to when we started?
+Maya: Smaller. Still bad, but it's one bad twenty seconds, not the end of my career.

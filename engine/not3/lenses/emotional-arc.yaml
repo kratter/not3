@@ -1,0 +1,103 @@
+id: emotional_arc
+name: Emotional Arc
+version: 1
+description: >
+  Affective states as they surface in what was said, anchored to quotes and
+  timestamps. Plotted against the timeline this shows how a conversation
+  moved — where it tightened, where it turned, where it settled.
+
+model:
+  temperature: 0.2
+
+thresholds:
+  min_confidence: 0.55
+  max_per_chunk: 10
+
+disclaimer: >
+  Inferred from wording alone, with no access to tone, pace or volume. Treat
+  these as readings of language, not of the person.
+
+guidance: |
+  Cover the whole span, not just the opening. Distress is easy to spot and
+  tends to crowd out everything else; a conversation that begins badly and
+  ends better must show both. Before returning, check the last few lines of
+  the transcript specifically: if the closing state differs from the opening
+  state, the closing state must be marked. An arc that stops before the end
+  is not an arc.
+
+  Positive states are as reportable as negative ones. Relief, resolve, warmth
+  and curiosity are not softer findings to be dropped when the list is full.
+
+  Mark shifts, not every sentence. A long stretch in the same register needs
+  one marker, not ten: prefer the line where the state is clearest, or where
+  it changes.
+
+  Use `confidence` for how clearly the state is present in the words, not for
+  how strong the feeling seems. A flat, understated line can be a confident
+  reading.
+
+  Only mark what the speaker expresses about their own state. Someone
+  describing another person's anger is not themselves angry.
+
+categories:
+  - id: distress
+    label: Distress
+    definition: Acute difficulty — overwhelm, dread, or being unable to cope.
+    positive_example: "I've been sitting with it since and it's just eating me."
+    negative_example: "It was a difficult quarter for the team."
+
+  - id: shame
+    label: Shame or self-criticism
+    definition: >
+      Negative judgement turned on oneself, or exposure felt in front of
+      others.
+    positive_example: "I couldn't even look at anyone afterwards."
+    negative_example: "I got the numbers wrong on slide four."
+
+  - id: frustration
+    label: Frustration or anger
+    definition: Blocked effort, irritation, or grievance directed outward.
+    positive_example: "I've raised this three times and nothing ever moves."
+    negative_example: "The process has some bottlenecks we should look at."
+
+  - id: anxiety
+    label: Anxiety or apprehension
+    definition: Worry oriented toward something that has not happened yet.
+    positive_example: "That's terrifying, I keep putting off making the call."
+    negative_example: "I'll need to prepare for that conversation."
+
+  - id: resignation
+    label: Resignation or flatness
+    definition: >
+      Withdrawal of effort or hope; an outcome treated as settled and not
+      worth contesting.
+    positive_example: "There's no point pushing, it is what it is."
+    negative_example: "I've decided not to pursue that one."
+
+  - id: relief
+    label: Relief or lightening
+    definition: Tension releasing; a burden described as smaller than before.
+    positive_example: "Smaller. Still bad, but it's one bad twenty seconds, not the end of my career."
+    negative_example: "The deadline moved to Friday."
+
+  - id: resolve
+    label: Resolve or determination
+    definition: >
+      Forward commitment carrying energy — deciding to act, not merely
+      agreeing that one could.
+    positive_example: "Okay. I'll stop at ten the night before the next one."
+    negative_example: "I suppose stopping earlier might help."
+
+  - id: warmth
+    label: Warmth or connection
+    definition: Appreciation, affection, or acknowledgement directed at another person.
+    positive_example: "Honestly, it helps a lot that you keep asking."
+    negative_example: "Thanks, that's noted."
+
+  - id: curiosity
+    label: Curiosity or opening
+    definition: >
+      Genuine interest in examining something, or willingness to revise a
+      position.
+    positive_example: "Huh. I hadn't thought of it as a pattern before."
+    negative_example: "What time does it start?"

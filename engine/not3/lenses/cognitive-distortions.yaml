@@ -1,0 +1,108 @@
+id: cognitive_distortions
+name: Cognitive Distortions
+version: 1
+description: >
+  Descriptive markers of well-documented thinking patterns, as they appear in
+  how something was phrased. Observational only — this describes language, not
+  a person, and is not a clinical or diagnostic assessment.
+
+model:
+  temperature: 0.15
+
+thresholds:
+  min_confidence: 0.6
+  max_per_chunk: 5
+
+disclaimer: >
+  These are observations about phrasing, tied to verbatim quotes. They are not
+  a diagnosis and say nothing about anyone's mental health.
+
+guidance: |
+  Two rules override everything else:
+
+  1. Flag the phrasing, never the person. "This sentence frames the outcome in
+     absolutes" is in scope. "This speaker is anxious" is not.
+  2. Distress is not a distortion. Someone can describe a genuinely bad event
+     accurately and in strong language. Accurate description of something bad
+     is not a pattern to flag, however upsetting the subject.
+
+  3. A retraction is not an instance of the thing it retracts. If a line
+     qualifies, softens or withdraws an earlier absolute — "not every time",
+     "well, some of them went fine", "I know how it sounds" — that line is a
+     correction. Flag the original absolute if you like. Never flag the
+     correction, no matter how closely it echoes the wording of the original.
+     Before flagging any line, check whether it is walking something back; if
+     it is, skip it.
+
+categories:
+  - id: all_or_nothing
+    label: All-or-nothing framing
+    definition: >
+      An outcome or a person placed at one of two extremes, with the middle
+      ground treated as unavailable.
+    positive_example: "If it isn't perfect there's no point in handing it in at all."
+    negative_example: "The first half worked and the second half didn't."
+
+  - id: overgeneralization
+    label: Overgeneralization
+    definition: >
+      A single event turned into an always/never rule about how things go.
+      Look for absolute quantifiers doing the work of the argument.
+    positive_example: "I always do this. Every single time something matters, I fall apart."
+    negative_example: "Well. Not every time. The Henderson pitch went fine, I suppose."
+
+  - id: catastrophizing
+    label: Catastrophizing
+    definition: >
+      A setback extended into a chain of worsening consequences well beyond
+      what the event supports.
+    positive_example: "Now I'll never be considered for anything senior, and I should start looking elsewhere before they push me out."
+    negative_example: "That probably cost me some credibility with the team."
+
+  - id: mind_reading
+    label: Mind reading
+    definition: >
+      Another person's thoughts or judgements asserted as known, without their
+      having said so.
+    positive_example: "She had already written me off. You could just tell."
+    negative_example: "She told me afterwards she wasn't convinced."
+
+  - id: discounting_positives
+    label: Discounting the positive
+    definition: >
+      Contrary evidence acknowledged and then neutralized, so the negative
+      conclusion survives intact.
+    positive_example: "She said it was the clearest she'd heard it, but she was just being polite."
+    negative_example: "She liked the second half, which surprised me."
+
+  - id: emotional_reasoning
+    label: Emotional reasoning
+    definition: >
+      A feeling offered as evidence for a fact about the world, rather than as
+      a reaction to it.
+    positive_example: "It felt pointless, so clearly there was no point."
+    negative_example: "It felt pointless at the time, though the numbers say otherwise."
+
+  - id: should_statements
+    label: Fixed rules about oneself
+    definition: >
+      A rigid should/must/ought applied to one's own conduct, presented as
+      obligation rather than preference, usually with blame attached.
+    positive_example: "I should have been able to handle twenty seconds of silence."
+    negative_example: "I'd like to handle those pauses better next time."
+
+  - id: labeling
+    label: Global labeling
+    definition: >
+      A behaviour or single event converted into a fixed trait of the whole
+      person.
+    positive_example: "I'm just a fraud, that's all there is to it."
+    negative_example: "I handled that badly."
+
+  - id: personalization
+    label: Personalization
+    definition: >
+      Sole responsibility taken for an outcome that had several contributing
+      causes, or that was largely outside the speaker's control.
+    positive_example: "The whole deal fell through because of me."
+    negative_example: "My part of it definitely didn't help."

@@ -1,0 +1,17 @@
+* text=auto
+
+# Shell scripts must keep LF. Checked out with CRLF on Windows and then run on
+# macOS or Linux, the shebang becomes "/usr/bin/env bash\r" and the script
+# fails with a confusing "bad interpreter" error.
+*.sh text eol=lf
+
+# Batch files are the mirror image: cmd.exe wants CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never touch these.
+*.wav binary
+*.bin binary
+*.png binary
+*.ico binary
+*.icns binary

@@ -1,0 +1,92 @@
+id: communication_patterns
+name: Communication Patterns
+version: 1
+description: >
+  How the conversation was conducted rather than what it was about —
+  interruptions, hedging, questions that open or close, attempts to repair.
+  Most useful when speakers are separated.
+
+requires_speakers: false
+
+model:
+  temperature: 0.15
+
+thresholds:
+  min_confidence: 0.6
+  max_per_chunk: 6
+
+disclaimer: >
+  Descriptions of conversational moves, anchored to quotes. Not an assessment
+  of anyone's character or intent.
+
+guidance: |
+  Describe the move, not the motive. "Cuts across the previous speaker" is in
+  scope; "is trying to dominate" is not.
+
+  Where speaker labels are present, use them to judge who did what. Where they
+  are absent, only flag moves that are unambiguous from the wording alone —
+  a question is still a question with no speaker attached, but an interruption
+  usually is not identifiable.
+
+categories:
+  - id: open_question
+    label: Opening question
+    definition: >
+      A question that invites elaboration and widens what can be said next.
+    positive_example: "What happened on Thursday specifically?"
+    negative_example: "Did you send it?"
+
+  - id: challenge
+    label: Gentle challenge
+    definition: >
+      A claim questioned by reflecting it back or testing it, without
+      contradiction or argument.
+    positive_example: "Every time?"
+    negative_example: "That's not true and you know it."
+
+  - id: interruption
+    label: Interruption
+    definition: >
+      One speaker cutting across another mid-thought, visible as a broken-off
+      line or an explicit bid to take the floor.
+    positive_example: "They — sorry, can I say something first?"
+    negative_example: "Go ahead."
+
+  - id: hedging
+    label: Hedging
+    definition: >
+      A position stated and simultaneously softened, so it can be withdrawn.
+      Look for stacked qualifiers.
+    positive_example: "It's a bit of a pattern, maybe. I sort of over-prepare."
+    negative_example: "I'm not sure yet, I'll confirm tomorrow."
+
+  - id: repair
+    label: Repair attempt
+    definition: >
+      A move to correct course — apologizing, conceding a point, or softening
+      something just said.
+    positive_example: "Well. Not every time. The Henderson pitch went fine, I suppose."
+    negative_example: "Anyway, moving on."
+
+  - id: self_disclosure
+    label: Self-disclosure
+    definition: >
+      Volunteering something personal or vulnerable that was not asked for.
+    positive_example: "I think part of why it landed so hard is I hadn't slept."
+    negative_example: "I was at the office until late."
+
+  - id: deflection
+    label: Deflection
+    definition: >
+      A direct question met with a change of subject, a generality, or a
+      return question instead of an answer.
+    positive_example: "Why does it always come back to me, though?"
+    negative_example: "I'd rather not answer that."
+
+  - id: reframe
+    label: Reframe
+    definition: >
+      The same facts restated under a different description that changes what
+      they mean.
+    positive_example: "It's one bad twenty seconds, not the end of my career."
+    negative_example: "Let me say that again more clearly."
