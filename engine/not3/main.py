@@ -91,8 +91,12 @@ def main(argv: list[str] | None = None) -> int:
 
     import uvicorn
 
-    from .api import create_app
-    from .config import Settings
+    try:
+        from .api import create_app
+        from .config import Settings
+    except ImportError:
+        from not3.api import create_app
+        from not3.config import Settings
 
     settings = Settings.load()
     settings.ensure_dirs()

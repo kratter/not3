@@ -20,7 +20,7 @@ Windows and Apple Silicon are both first-class targets.
 | M3 — lens engine + 3 starter lenses | done |
 | M4 — Tauri + React desktop UI | done |
 | M5 — speaker diarization | done |
-| M6 — packaging and installers | not started |
+| M6 — packaging and installers | done |
 | M7 — cross-note insights and search | not started |
 
 The desktop app runs the whole pipeline; the CLI still drives every stage

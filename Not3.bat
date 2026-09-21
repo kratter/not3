@@ -125,7 +125,16 @@ if /i "%MODE%"=="setup" (
   python scripts\fetch_whisper.py
   if errorlevel 1 (
     echo.
-    echo   [x] Setup failed.
+    echo   [x] Whisper setup failed.
+    pause
+    exit /b 1
+  )
+  echo   [*] Downloading speaker diarization models...
+  echo.
+  python scripts\fetch_diarize.py
+  if errorlevel 1 (
+    echo.
+    echo   [x] Diarizer setup failed.
     pause
     exit /b 1
   )
@@ -163,7 +172,17 @@ if not exist "app\node_modules" (
 )
 
 if /i "%MODE%"=="build" (
-  echo   [*] Building a release binary. First build takes several minutes.
+  echo   [*] Packaging Python engine with PyInstaller...
+  echo.
+  python scripts\build_engine.py
+  if errorlevel 1 (
+    echo.
+    echo   [x] Engine packaging failed.
+    pause
+    exit /b 1
+  )
+  echo.
+  echo   [*] Building Tauri release binary and NSIS installer...
   echo.
   pushd app
   call npm run tauri build
@@ -176,7 +195,8 @@ if /i "%MODE%"=="build" (
     exit /b 1
   )
   echo.
-  echo   Built: app\src-tauri\target\release\Not3.exe
+  echo   [ok] Built: app\src-tauri\target\release\Not3.exe
+  echo   [ok] Installer: app\src-tauri\target\release\bundle\nsis\Not3_0.1.0_x64-setup.exe
   echo.
   pause
   exit /b 0

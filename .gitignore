@@ -9,6 +9,7 @@
 # Python
 __pycache__/
 *.py[cod]
+*.spec
 .venv/
 .pytest_cache/
 *.egg-info/

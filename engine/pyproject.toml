@@ -41,4 +41,5 @@ testpaths = ["../tests"]
 [dependency-groups]
 dev = [
     "pytest-asyncio>=1.4.0",
+    "pyinstaller>=6.10",
 ]
