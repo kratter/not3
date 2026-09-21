@@ -79,3 +79,47 @@ def test_sherpa_diarizer_on_fixture(tmp_path: Path):
     speakers = {t.speaker for t in turns}
     assert len(speakers) == 1
     assert "SPEAKER_00" in speakers
+
+
+def test_diarize_note_integration(tmp_path: Path):
+    from not3 import db
+
+    schema_sql = (Path(__file__).resolve().parents[1] / "engine" / "not3" / "schema.sql").read_text(encoding="utf-8")
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(schema_sql)
+
+    wav = tmp_path / "dummy.wav"
+    wav.write_bytes(b"RIFFdummyWAVE")
+
+    note_id = db.create_note(
+        conn,
+        source_path=str(wav),
+        source_name="dummy.wav",
+        source_hash="dummyhash",
+        media_path=str(wav),
+        duration_ms=4000,
+        title="Test",
+    )
+    db.replace_segments(conn, note_id, [
+        {"idx": 0, "start_ms": 0, "end_ms": 2000, "text": "Hello world", "confidence": 1.0, "words_json": None},
+        {"idx": 1, "start_ms": 2000, "end_ms": 4000, "text": "Good morning", "confidence": 1.0, "words_json": None},
+    ])
+
+    class MockDiarizer:
+        def diarize(self, media_path, progress_cb=None):
+            return [
+                SpeakerTurn(start_ms=0, end_ms=2000, speaker="SPEAKER_00"),
+                SpeakerTurn(start_ms=2000, end_ms=4000, speaker="SPEAKER_01"),
+            ]
+
+    s = Settings(data_dir=tmp_path)
+    count = diarize_note(conn, note_id, s, diarizer=MockDiarizer())
+    assert count == 2
+
+    speakers = conn.execute("SELECT label FROM speakers WHERE note_id = ?", (note_id,)).fetchall()
+    assert {r["label"] for r in speakers} == {"SPEAKER_00", "SPEAKER_01"}
+
+    segs = conn.execute("SELECT s.idx, sp.label FROM segments s JOIN speakers sp ON s.speaker_id = sp.id WHERE s.note_id = ? ORDER BY s.idx", (note_id,)).fetchall()
+    assert segs[0]["label"] == "SPEAKER_00"
+    assert segs[1]["label"] == "SPEAKER_01"

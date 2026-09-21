@@ -371,7 +371,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         elif not note["media_path"] or note["asr_backend"] == "manual":
             stages = ("distill", "highlight", "lens", "export")
         else:
-            stages = ALL_STAGES
+            has_segments = c.execute(
+                "SELECT 1 FROM segments WHERE note_id = ? LIMIT 1", (note_id,)
+            ).fetchone() is not None
+            if has_segments:
+                stages = ("diarize", "distill", "highlight", "lens", "export")
+            else:
+                stages = ALL_STAGES
         unknown = set(stages) - set(ALL_STAGES)
         if unknown:
             raise HTTPException(status_code=400, detail=f"unknown stages: {sorted(unknown)}")

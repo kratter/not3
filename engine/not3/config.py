@@ -73,7 +73,14 @@ def discover_asr_backends(root: Path | None = None) -> list[AsrBackend]:
     is decided by the platform rather than the path.
     """
     root = root or _repo_root()
-    vendor = root / "vendor" / "whisper"
+    vendor_dirs = [root / "vendor" / "whisper"]
+    if len(root.parents) >= 3:
+        vendor_dirs.append(root.parents[2] / "vendor" / "whisper")
+    vendor_dirs.extend([
+        root.parent / "vendor" / "whisper",
+        _data_dir() / "vendor" / "whisper",
+    ])
+    vendor = next((d for d in vendor_dirs if d.is_dir()), root / "vendor" / "whisper")
     exe = "whisper-cli.exe" if sys.platform == "win32" else "whisper-cli"
     arch = host_arch()
 
@@ -163,8 +170,14 @@ class Settings:
         override = os.environ.get("NOT3_MODELS_DIR")
         if override:
             return Path(override).expanduser()
-        shipped = self.repo_root / "models"
-        return shipped if shipped.is_dir() else self.data_dir / "models"
+        candidates = [self.repo_root / "models"]
+        if len(self.repo_root.parents) >= 3:
+            candidates.append(self.repo_root.parents[2] / "models")
+        candidates.append(self.data_dir / "models")
+        for cand in candidates:
+            if cand and cand.is_dir():
+                return cand
+        return self.data_dir / "models"
 
     @property
     def lenses_dir(self) -> Path:

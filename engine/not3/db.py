@@ -24,6 +24,10 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def rows_to_dicts(rows) -> list[dict]:
+    return [dict(r) for r in rows]
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     """Open (and on first use, create) the database."""
     db_path.parent.mkdir(parents=True, exist_ok=True)

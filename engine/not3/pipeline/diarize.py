@@ -214,8 +214,9 @@ def diarize_note(
     note_id: int,
     settings: Settings,
     progress_cb: Callable[[float, str], None] | None = None,
+    diarizer: DiarizerBackend | None = None,
 ) -> int:
-    """Run diarization on the note's normalized media and update segments with speakers.
+    """Run speaker diarization on a note and map turns to transcript segments.
 
     Returns the number of speakers identified.
     """
@@ -230,7 +231,7 @@ def diarize_note(
     if not media_path.is_file():
         raise FileNotFoundError(f"Media file not found: {media_path}")
 
-    diarizer = get_diarizer(settings)
+    diarizer = diarizer or get_diarizer(settings)
     if not diarizer:
         return 0
 
@@ -261,12 +262,13 @@ def diarize_note(
         spk_map = {r["label"]: r["id"] for r in spk_rows}
 
         # Fetch all segments
-        segments = db.rows_to_dicts(
-            conn.execute(
+        segments = [
+            dict(r)
+            for r in conn.execute(
                 "SELECT id, start_ms, end_ms FROM segments WHERE note_id = ? ORDER BY idx",
                 (note_id,),
-            )
-        )
+            ).fetchall()
+        ]
 
         alignment = align_segments_to_speakers(segments, turns)
 
