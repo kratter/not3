@@ -1,0 +1,63 @@
+id: decision_biases
+name: Decision Biases & Heuristics
+version: 1
+description: >
+  Cognitive heuristics and systematic decision-making errors that distort
+  objective reasoning, strategic evaluation, and risk assessment.
+
+model:
+  temperature: 0.15
+
+thresholds:
+  min_confidence: 0.6
+  max_per_chunk: 5
+
+disclaimer: >
+  Observations identify verbal expressions of cognitive heuristics in dialogue.
+  They are not an evaluation of competence.
+
+guidance: |
+  Rules:
+  1. Distinguish prudent caution or data-backed strategy from heuristic fallacies.
+  2. The bias must be present in the rationale or argument being expressed.
+
+categories:
+  - id: sunk_cost
+    label: Sunk Cost Fallacy
+    definition: >
+      Justifying the continuation of an unproductive or failing effort primarily
+      because of the time, capital, or effort already spent on it.
+    positive_example: "We've already invested eighteen months and three million dollars into this architecture, we can't abandon it now."
+    negative_example: "We should evaluate if continuing with this architecture delivers a positive return compared to migrating."
+
+  - id: confirmation_bias
+    label: Confirmation Bias
+    definition: >
+      Actively seeking out or emphasizing only facts that confirm a pre-existing
+      belief while dismissing or downplaying contradictory evidence.
+    positive_example: "Ignore the negative customer survey results; that one positive tweet proves users love the redesign."
+    negative_example: "The feedback is mixed: power users like the change, but newer users are struggling with onboarding."
+
+  - id: anchoring
+    label: Anchoring
+    definition: >
+      Over-relying on an initial piece of information, estimate, or number
+      when making subsequent judgments, even if irrelevant or arbitrary.
+    positive_example: "They originally asked for 500k, so getting them down to 400k is an unbelievable discount."
+    negative_example: "Based on our benchmark rate card, this scope of work should cost approximately 250k."
+
+  - id: framing_effect
+    label: Framing Effect
+    definition: >
+      Drawing opposite conclusions from the same information based purely on whether
+      it is presented as a gain or a loss.
+    positive_example: "A 10% failure rate is intolerable, but a 90% success rate sounds fantastic."
+    negative_example: "Our uptime SLA was 99.9%, which translates to approximately 8 hours of downtime this year."
+
+  - id: groupthink
+    label: Groupthink / Concurrence Seeking
+    definition: >
+      Suppressing doubts, objections, or alternative views to maintain artificial
+      consensus and avoid friction within a group.
+    positive_example: "Everyone else seems on board with the launch date, so I guess I won't bring up my QA concerns."
+    negative_example: "I know everyone wants to ship next week, but we have two critical blocker bugs in QA."

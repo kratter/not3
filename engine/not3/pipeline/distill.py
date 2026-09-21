@@ -73,8 +73,33 @@ REDUCE_SCHEMA = {
     "required": ["title", "summary", "topics"],
 }
 
-CHUNK_PROMPT = """Below is part of a transcript. Each line is:
+STYLE_INSTRUCTIONS: dict[str, str] = {
+    "executive": (
+        "Adopt an executive reporting style: focus on strategic outcomes, high-level decisions, "
+        "and clear deliverables. Keep prose authoritative and decisive."
+    ),
+    "clinical": (
+        "Adopt an observational clinical/psychological analysis style: focus on communicative presentation, "
+        "affective tone, cognitive themes, relational dynamics, and verbatim evidence. Maintain descriptive objectivity."
+    ),
+    "technical": (
+        "Adopt a rigorous technical and engineering documentation style: focus on architecture, system specifications, "
+        "constraints, trade-offs, and technical problem-solving."
+    ),
+    "bullet_structured": (
+        "Adopt a structured matrix style: prioritize concise, high-density bullet statements, structured takeaways, "
+        "and explicit ownership breakdown."
+    ),
+    "dialogue_analysis": (
+        "Adopt a conversation and discourse analysis style: focus on conversational flow, alignment between speakers, "
+        "negotiation bids, and points of agreement or divergence."
+    ),
+}
 
+CHUNK_PROMPT = """Below is part of a transcript.
+Style guidance: {style_instruction}
+
+Each line is:
 [segment_id] (timestamp) optional speaker: text
 
 Produce, using only what is in these lines:
@@ -96,15 +121,15 @@ TRANSCRIPT
 {transcript}"""
 
 REDUCE_PROMPT = """These are summaries of consecutive parts of one recording,
-in order:
+in order.
+Style guidance: {style_instruction}
 
 {partials}
 
 Produce:
 - title: a specific, concrete title for the whole recording, at most 8 words.
   No filler like "Discussion about" or "Meeting regarding".
-- summary: 3-6 sentences covering the whole recording, in order, as a single
-  paragraph. No bullet points, no preamble.
+- summary: 3-6 sentences covering the whole recording, in order, reflecting the requested reporting style.
 - topics: 5-10 short subject labels for the whole recording, deduplicated.
 
 Use only what appears above."""
@@ -126,6 +151,7 @@ def distill(
     settings: Settings,
     client: Client | None = None,
     *,
+    style: str = "executive",
     on_progress: Callable[[float, str], None] | None = None,
 ) -> DistillResult:
     client = client or settings.llm_client()
@@ -144,6 +170,8 @@ def distill(
     topics: list[str] = []
     stats = AnchorStats()
 
+    style_instruction = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS["executive"])
+
     for chunk in chunks:
         if on_progress:
             on_progress(chunk.index / (len(chunks) + 1),
@@ -152,7 +180,10 @@ def distill(
             model,
             [
                 {"role": "system", "content": SYSTEM},
-                {"role": "user", "content": CHUNK_PROMPT.format(transcript=chunk.render())},
+                {"role": "user", "content": CHUNK_PROMPT.format(
+                    style_instruction=style_instruction,
+                    transcript=chunk.render(),
+                )},
             ],
             CHUNK_SCHEMA,
             temperature=0.2,
@@ -193,6 +224,7 @@ def distill(
             [
                 {"role": "system", "content": SYSTEM},
                 {"role": "user", "content": REDUCE_PROMPT.format(
+                    style_instruction=style_instruction,
                     partials="\n\n".join(
                         f"Part {i + 1}: {p}" for i, p in enumerate(partials) if p
                     )

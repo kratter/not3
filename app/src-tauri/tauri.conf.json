@@ -29,7 +29,9 @@
   "bundle": {
     "active": true,
     "targets": [
-      "nsis"
+      "nsis",
+      "dmg",
+      "app"
     ],
     "icon": [
       "icons/icon.ico",
@@ -37,6 +39,11 @@
     ],
     "resources": {
       "../../engine/dist/not3-engine/": "engine/"
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "installer-hooks.nsh"
+      }
     }
   }
 }

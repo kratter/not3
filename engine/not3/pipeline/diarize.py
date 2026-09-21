@@ -94,7 +94,7 @@ class SherpaDiarizer(DiarizerBackend):
         _ensure_onnxruntime_dll()
         import sherpa_onnx
 
-        num_threads = settings.diarize_threads or 2
+        num_threads = settings.diarize_threads or max(2, min(8, (os.cpu_count() or 4) // 2))
         config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
             segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
                 pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
@@ -124,8 +124,12 @@ class SherpaDiarizer(DiarizerBackend):
         self,
         wav_path: Path,
         progress_cb: Callable[[float, str], None] | None = None,
+        check_cancelled: Callable[[], bool] | None = None,
     ) -> list[SpeakerTurn]:
         import numpy as np
+
+        if progress_cb:
+            progress_cb(0.1, "reading audio for diarization...")
 
         with wave.open(str(wav_path), "rb") as wf:
             framerate = wf.getframerate()
@@ -134,13 +138,21 @@ class SherpaDiarizer(DiarizerBackend):
             raw = wf.readframes(wf.getnframes())
             samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
+        if check_cancelled and check_cancelled():
+            return []
+
         def _callback(processed_chunks: int, num_chunks: int) -> int:
+            if check_cancelled and check_cancelled():
+                return 1
             if progress_cb and num_chunks > 0:
                 frac = min(1.0, processed_chunks / num_chunks)
-                progress_cb(frac, f"diarizing ({int(frac * 100)}%)")
+                pct = int(frac * 100)
+                progress_cb(max(0.1, frac), f"calculating speakers ({pct}%)")
             return 0
 
         result = self.diarizer.process(samples, callback=_callback)
+        if check_cancelled and check_cancelled():
+            return []
         raw_segments = result.sort_by_start_time()
 
         turns: list[SpeakerTurn] = []
@@ -215,6 +227,7 @@ def diarize_note(
     settings: Settings,
     progress_cb: Callable[[float, str], None] | None = None,
     diarizer: DiarizerBackend | None = None,
+    check_cancelled: Callable[[], bool] | None = None,
 ) -> int:
     """Run speaker diarization on a note and map turns to transcript segments.
 
@@ -231,14 +244,19 @@ def diarize_note(
     if not media_path.is_file():
         raise FileNotFoundError(f"Media file not found: {media_path}")
 
+    if progress_cb:
+        progress_cb(0.05, "loading diarizer models...")
+
     diarizer = diarizer or get_diarizer(settings)
     if not diarizer:
         return 0
 
-    if progress_cb:
-        progress_cb(0.05, "loading diarizer")
-
-    turns = diarizer.diarize(media_path, progress_cb=progress_cb)
+    import inspect
+    sig = inspect.signature(diarizer.diarize)
+    if "check_cancelled" in sig.parameters:
+        turns = diarizer.diarize(media_path, progress_cb=progress_cb, check_cancelled=check_cancelled)
+    else:
+        turns = diarizer.diarize(media_path, progress_cb=progress_cb)
     if not turns:
         if progress_cb:
             progress_cb(1.0, "no speech detected")

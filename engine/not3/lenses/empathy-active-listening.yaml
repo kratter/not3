@@ -1,0 +1,54 @@
+id: empathy_active_listening
+name: Empathy & Active Listening
+version: 1
+description: >
+  Positive communicative indicators of empathetic attunement, perspective-taking,
+  reflective listening, and emotional validation in conversation.
+
+model:
+  temperature: 0.15
+
+thresholds:
+  min_confidence: 0.6
+  max_per_chunk: 5
+
+disclaimer: >
+  Identifies language patterns associated with empathetic communication.
+
+guidance: |
+  Rules:
+  1. Flag genuine expressions of empathy, reflective listening, or validation.
+  2. Superficial politeness or patronizing tones without empathetic substance are near-misses.
+
+categories:
+  - id: reflective_listening
+    label: Reflective Listening
+    definition: >
+      Paraphrasing or reflecting back the essence of what another person said to verify
+      understanding before responding.
+    positive_example: "What I'm hearing is that you feel overwhelmed because the project requirements changed three times this week."
+    negative_example: "Yeah, yeah, I heard what you said, but here is what we are going to do."
+
+  - id: emotional_validation
+    label: Emotional Validation
+    definition: >
+      Explicitly acknowledging and legitimizing someone else's emotional experience
+      as understandable and valid.
+    positive_example: "It makes total sense that you'd feel upset given how abrupt that announcement was."
+    negative_example: "You shouldn't let that bother you; it's really not that big of a deal."
+
+  - id: perspective_taking
+    label: Perspective-Taking
+    definition: >
+      Demonstrating an intentional effort to view circumstances from the other party's
+      standpoint, constraints, or values.
+    positive_example: "If I were in your position with tight deadlines and no extra headcount, I would have pushed back too."
+    negative_example: "I don't care how busy your team is; just get the report submitted."
+
+  - id: non_defensive_inquiry
+    label: Non-Defensive Inquiry
+    definition: >
+      Asking open, curious questions aimed at deeper mutual clarity rather than
+      cross-examination or finding fault.
+    positive_example: "Can you help me understand what part of this proposal feels most risky to you?"
+    negative_example: "Why on earth would you think this proposal wouldn't work?"

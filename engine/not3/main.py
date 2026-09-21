@@ -101,6 +101,15 @@ def main(argv: list[str] | None = None) -> int:
     settings = Settings.load()
     settings.ensure_dirs()
 
+    # Eagerly initialize ONNX Runtime DLLs & Sherpa on the main thread before
+    # background threads and uvicorn start, preventing Windows OS Loader Lock deadlocks.
+    try:
+        from not3.pipeline.diarize import _ensure_onnxruntime_dll
+        _ensure_onnxruntime_dll()
+        import sherpa_onnx  # noqa: F401
+    except Exception as exc:
+        sys.stderr.write(f"[engine] Preload note: {exc}\n")
+
     # Bind before uvicorn so the port is known and never released in between.
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

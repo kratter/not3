@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cx } from "../util";
 
 export function Button({
-  children, onClick, variant = "ghost", size = "md", disabled, title, active, className, type = "button",
+  children, onClick, variant = "ghost", size = "md", disabled, title, active, className, type = "button", id,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -13,6 +13,7 @@ export function Button({
   active?: boolean;
   className?: string;
   type?: "button" | "submit" | "reset";
+  id?: string;
 }) {
   const base =
     "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors " +
@@ -28,6 +29,7 @@ export function Button({
   };
   return (
     <button
+      id={id}
       type={type}
       onClick={onClick}
       disabled={disabled}
@@ -171,7 +173,8 @@ export function Icon({ name, className }: { name: IconName; className?: string }
 
 export type IconName =
   | "play" | "pause" | "back" | "forward" | "plus" | "pencil" | "search" | "settings"
-  | "trash" | "refresh" | "sun" | "moon" | "quote" | "lens" | "export" | "alert";
+  | "trash" | "refresh" | "sun" | "moon" | "quote" | "lens" | "export" | "alert" | "sparkles"
+  | "check" | "x" | "download" | "upload" | "lock" | "copy";
 
 const PATHS: Record<IconName, ReactNode> = {
   play: <path d="M6 4l14 8-14 8z" fill="currentColor" stroke="none" />,
@@ -193,4 +196,45 @@ const PATHS: Record<IconName, ReactNode> = {
   lens: <><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></>,
   export: <><path d="M12 15V3" /><path d="m7 8 5-5 5 5" /><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" /></>,
   alert: <><circle cx="12" cy="12" r="9" /><path d="M12 8v5" /><path d="M12 16h.01" /></>,
+  sparkles: <><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z" /><path d="M19 3v4M21 5h-4" /></>,
+  check: <path d="M20 6 9 17l-5-5" />,
+  x: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
+  download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></>,
+  upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" /></>,
+  lock: <><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>,
+  copy: <><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
 };
+
+
+
+export function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+}) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+      <div className="w-full max-w-xl rounded-xl border border-[var(--border)] bg-[var(--bg-raised)] shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3.5">
+          <h3 className="text-[14px] font-semibold text-[var(--text)]">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-[var(--text-faint)] hover:text-[var(--text)] hover:bg-[var(--bg-inset)]"
+          >
+            <Icon name="x" className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+

@@ -3,6 +3,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 import type { Api, EngineSettings, Lens, LensRun, Status } from "../api";
 import { cx } from "../util";
+import { SetupModal } from "./SetupModal";
 import { Button, Chip, Icon, Spinner } from "./ui";
 
 export function Settings({
@@ -19,16 +20,89 @@ export function Settings({
   const [settings, setSettings] = useState<EngineSettings | null>(null);
   const [runs, setRuns] = useState<LensRun[]>([]);
   const [saving, setSaving] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
 
-  useEffect(() => {
-    void Promise.all([api.status(), api.settings(), api.lensRuns()])
-      .then(([s, cfg, r]) => {
+  // App Security & Password Protection
+  const [passwordRequired, setPasswordRequired] = useState(false);
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState<string | null>(null);
+  const [pwSubmitting, setPwSubmitting] = useState(false);
+  const [showPwForm, setShowPwForm] = useState(false);
+
+  const loadData = () => {
+    void Promise.all([api.status(), api.settings(), api.lensRuns(), api.authStatus()])
+      .then(([s, cfg, r, auth]) => {
         setStatus(s);
         setSettings(cfg);
         setRuns(r);
+        setPasswordRequired(auth.password_required);
       })
       .catch(() => undefined);
+  };
+
+  useEffect(() => {
+    loadData();
   }, [api]);
+
+  async function handleSetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwError(null);
+    setPwSuccess(null);
+    if (!newPw) {
+      setPwError("Password cannot be empty");
+      return;
+    }
+    if (newPw !== confirmPw) {
+      setPwError("Passwords do not match");
+      return;
+    }
+    setPwSubmitting(true);
+    try {
+      await api.setAuthPassword(newPw, passwordRequired ? currentPw : undefined);
+      sessionStorage.setItem("not3_unlocked", "true");
+      setPasswordRequired(true);
+      setPwSuccess("Password protection enabled! Not3 will ask for this password on every restart.");
+      setCurrentPw("");
+      setNewPw("");
+      setConfirmPw("");
+      setShowPwForm(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("Not Found") || msg.includes("404")) {
+        setPwError("Engine service needs restart to apply authentication updates. Please restart Not3.");
+      } else {
+        setPwError(msg);
+      }
+    } finally {
+      setPwSubmitting(false);
+    }
+  }
+
+  async function handleRemovePassword() {
+    setPwError(null);
+    setPwSuccess(null);
+    if (!currentPw) {
+      setPwError("Please enter your current password to disable protection");
+      return;
+    }
+    setPwSubmitting(true);
+    try {
+      await api.removeAuthPassword(currentPw);
+      setPasswordRequired(false);
+      setPwSuccess("Password protection has been removed.");
+      setCurrentPw("");
+      setNewPw("");
+      setConfirmPw("");
+      setShowPwForm(false);
+    } catch (err: unknown) {
+      setPwError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setPwSubmitting(false);
+    }
+  }
 
   async function update(patch: Partial<EngineSettings>) {
     setSaving(true);
@@ -38,6 +112,7 @@ export function Settings({
       setSaving(false);
     }
   }
+
 
   const models = status?.ollama.models ?? [];
 
@@ -97,6 +172,17 @@ export function Settings({
                     {status.export_dir}
                   </button>
                 </Row>
+                <div className="pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowSetup(true)}
+                    className="text-xs"
+                  >
+                    <Icon name="settings" className="mr-1 h-3.5 w-3.5" />
+                    Setup & Download Components
+                  </Button>
+                </div>
               </div>
             ) : (
               <Spinner />
@@ -216,6 +302,133 @@ export function Settings({
             </Section>
           )}
 
+          <Section
+            title="App Security & Password Protection"
+            hint="Require a password each time Not3 launches or restarts to protect your confidential recordings and notes."
+          >
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-raised)] p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`flex h-8 w-8 items-center justify-center rounded-xl text-[14px] ${
+                      passwordRequired
+                        ? "bg-[var(--good)]/15 text-[var(--good)]"
+                        : "bg-[var(--text-faint)]/15 text-[var(--text-faint)]"
+                    }`}
+                  >
+                    {passwordRequired ? "🔒" : "🔓"}
+                  </span>
+                  <div>
+                    <h4 className="text-[13px] font-medium text-[var(--text)]">
+                      {passwordRequired ? "Password Protection is ACTIVE" : "Password Protection is OFF"}
+                    </h4>
+                    <p className="text-[11px] text-[var(--text-faint)]">
+                      {passwordRequired
+                        ? "You will be prompted for your password every time the app opens or restarts."
+                        : "Anyone with access to this machine can open and view notes without a password."}
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  size="sm"
+                  variant={passwordRequired ? "outline" : "solid"}
+                  onClick={() => {
+                    setShowPwForm(!showPwForm);
+                    setPwError(null);
+                    setPwSuccess(null);
+                  }}
+                >
+                  {showPwForm
+                    ? "Cancel"
+                    : passwordRequired
+                      ? "Change or Remove"
+                      : "Enable Password"}
+                </Button>
+              </div>
+
+              {pwSuccess && (
+                <p className="text-[12px] text-[var(--good)] font-medium flex items-center gap-1.5">
+                  <span>✓</span> {pwSuccess}
+                </p>
+              )}
+
+              {showPwForm && (
+                <form onSubmit={handleSetPassword} className="border-t border-[var(--border)] pt-4 space-y-3">
+                  {passwordRequired && (
+                    <div>
+                      <label className="block text-[11px] font-medium text-[var(--text-faint)] uppercase tracking-wider mb-1">
+                        Current Password
+                      </label>
+                      <input
+                        type="password"
+                        value={currentPw}
+                        onChange={(e) => setCurrentPw(e.target.value)}
+                        placeholder="Enter current password..."
+                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-1.5 text-[13px] text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
+                      />
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-[var(--text-faint)] uppercase tracking-wider mb-1">
+                        {passwordRequired ? "New Password" : "Password"}
+                      </label>
+                      <input
+                        type="password"
+                        value={newPw}
+                        onChange={(e) => setNewPw(e.target.value)}
+                        placeholder="Create a password..."
+                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-1.5 text-[13px] text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-[var(--text-faint)] uppercase tracking-wider mb-1">
+                        Confirm Password
+                      </label>
+                      <input
+                        type="password"
+                        value={confirmPw}
+                        onChange={(e) => setConfirmPw(e.target.value)}
+                        placeholder="Confirm password..."
+                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-1.5 text-[13px] text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {pwError && (
+                    <p className="text-[12px] text-[var(--bad)] font-medium flex items-center gap-1">
+                      <span>⚠️</span> {pwError}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1">
+                    {passwordRequired && (
+                      <button
+                        type="button"
+                        onClick={handleRemovePassword}
+                        disabled={pwSubmitting}
+                        className="text-[12px] text-[var(--bad)] hover:underline font-medium"
+                      >
+                        Remove Password Protection
+                      </button>
+                    )}
+                    <div className="flex-1" />
+                    <Button
+                      type="submit"
+                      variant="solid"
+                      size="sm"
+                      disabled={pwSubmitting}
+                    >
+                      {pwSubmitting ? <Spinner className="h-3.5 w-3.5" /> : passwordRequired ? "Update Password" : "Save & Protect"}
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </Section>
+
           <Section title="About">
             <p className="text-[12px] leading-relaxed text-[var(--text-faint)]">
               Everything runs on this machine — transcription through whisper.cpp,
@@ -231,6 +444,14 @@ export function Settings({
           <div className="h-8" />
         </div>
       </div>
+
+      {showSetup && (
+        <SetupModal
+          api={api}
+          onClose={() => setShowSetup(false)}
+          onComplete={() => loadData()}
+        />
+      )}
     </div>
   );
 }

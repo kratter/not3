@@ -68,14 +68,27 @@ export function useProgress(api: Api | null) {
         setEvents((prev) => {
           const next = new Map(prev);
           const forNote = new Map(next.get(event.note_id) ?? []);
-          const stage = "stage" in event ? event.stage : "_";
+          const stage = "stage" in event && event.stage ? event.stage : "_";
+          if (event.type === "cancelled") {
+            for (const [k, v] of forNote.entries()) {
+              if (v.type === "progress" || (v.type === "stage" && v.state === "running")) {
+                forNote.delete(k);
+              }
+            }
+          }
           forNote.set(stage, event);
           next.set(event.note_id, forNote);
           return next;
         });
-        // Terminal events change data the views already fetched, so they need
+        // Terminal & lifecycle events change data the views already fetched, so they need
         // to refetch; progress events only move a bar.
-        if (event.type === "done" || event.type === "error" || event.type === "stage") {
+        if (
+          event.type === "done" ||
+          event.type === "error" ||
+          event.type === "stage" ||
+          event.type === "cancelled" ||
+          event.type === "queued"
+        ) {
           setTick((t) => t + 1);
         }
       }, controller.signal)

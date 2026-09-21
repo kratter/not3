@@ -206,3 +206,166 @@ def test_disabling_a_lens_sticks(client):
 def test_patching_an_unknown_lens_is_404(client):
     r = client.patch("/api/lenses/no_such_lens", headers=auth(), json={"enabled": True})
     assert r.status_code == 404
+
+
+def test_all_eight_lenses_registered_on_startup(client):
+    lenses = client.get("/api/lenses", headers=auth()).json()
+    ids = {l["id"] for l in lenses}
+    expected = {
+        "cognitive_distortions",
+        "emotional_arc",
+        "communication_patterns",
+        "defense_mechanisms",
+        "decision_biases",
+        "empathy_active_listening",
+        "conflict_dynamics",
+        "readiness_for_change",
+    }
+    assert expected <= ids
+    assert len(lenses) >= 8
+
+
+# -- export ---------------------------------------------------------------
+
+
+def test_get_export_for_note(client):
+    r = client.get(f"/api/notes/{client.note_id}/export", headers=auth())
+    assert r.status_code == 200
+    data = r.json()
+    assert "content" in data
+    assert "# Sample" in data["content"]
+    assert "the quick brown fox" in data["content"]
+    assert data["filename"].endswith(".md")
+
+
+def test_write_export_for_note(client):
+    r = client.post(f"/api/notes/{client.note_id}/export", headers=auth())
+    assert r.status_code == 200
+    data = r.json()
+    assert data["note_id"] == client.note_id
+    assert os.path.exists(data["path"])
+    with open(data["path"], "r", encoding="utf-8") as f:
+        saved = f.read()
+    assert "# Sample" in saved
+
+
+# -- text note with style and lenses --------------------------------------
+
+
+def test_create_text_note_with_style_and_lenses(client):
+    payload = {
+        "title": "Clinical Session",
+        "text": "- client expressed worry about future\n- tried to rationalize choices",
+        "formalize": False,
+        "style": "clinical",
+        "lenses": ["defense_mechanisms", "cognitive_distortions"],
+        "run": False,
+    }
+    r = client.post("/api/notes/text", headers=auth(), json=payload)
+    assert r.status_code == 200
+    res = r.json()
+    assert "note_id" in res
+    assert res.get("duplicate") is False
+
+
+# -- cancel and reprocess tests -------------------------------------------
+
+
+def test_cancel_half_done_note(client):
+    settings = Settings.load()
+    conn = db.get(settings.db_path)
+    note_id = client.note_id
+
+    # Simulate a note that was half-done: transcribe was running, diarize pending
+    db.init_jobs(conn, note_id)
+    db.set_job(conn, note_id, "transcribe", state="running", progress=0.5, message="transcribing")
+    db.set_job(conn, note_id, "diarize", state="pending", progress=0.0, message="queued")
+    db.update_note(conn, note_id, status="processing")
+
+    # Cancel via API
+    r = client.post(f"/api/notes/{note_id}/cancel", headers=auth())
+    assert r.status_code == 200
+    assert r.json()["cancelled"] is True
+
+    # Check that SQLite jobs table is updated to error / cancelled
+    jobs = {row["stage"]: dict(row) for row in db.get_jobs(conn, note_id)}
+    assert jobs["transcribe"]["state"] == "error"
+    assert "Cancelled" in jobs["transcribe"]["message"]
+    assert jobs["diarize"]["state"] == "error"
+
+    # Check note status is error
+    note = db.get_note(conn, note_id)
+    assert note["status"] == "error"
+
+
+def test_reprocess_stuck_or_half_done_note(client):
+    settings = Settings.load()
+    conn = db.get(settings.db_path)
+    note_id = client.note_id
+
+    # Note in stuck running state
+    db.init_jobs(conn, note_id)
+    db.set_job(conn, note_id, "distill", state="running", progress=0.2)
+    db.update_note(conn, note_id, status="processing")
+
+    # Reprocess via /run
+    r = client.post(
+        f"/api/notes/{note_id}/run",
+        headers=auth(),
+        json={"stages": ["distill", "highlight"], "style": "executive"},
+    )
+    assert r.status_code == 200
+    res = r.json()
+    assert res["queued"] == note_id
+    assert res["stages"] == ["distill", "highlight"]
+
+    # Verify jobs were cleanly reset to pending
+    jobs = {row["stage"]: dict(row) for row in db.get_jobs(conn, note_id)}
+    assert jobs["distill"]["state"] == "pending"
+    assert jobs["highlight"]["state"] == "pending"
+
+
+def test_reset_stale_jobs_on_recovery(client):
+    settings = Settings.load()
+    conn = db.get(settings.db_path)
+    note_id = client.note_id
+
+    # Leave jobs in running
+    db.set_job(conn, note_id, "transcribe", state="running")
+    db.set_job(conn, note_id, "embed", state="error", error="Processing was interrupted")
+    db.update_note(conn, note_id, status="processing")
+
+    count = db.reset_stale_jobs(conn)
+    assert count >= 1
+
+    jobs = {row["stage"]: dict(row) for row in db.get_jobs(conn, note_id)}
+    assert jobs["transcribe"]["state"] == "error"
+    # embed must be completely gone
+    assert "embed" not in jobs
+    assert db.get_note(conn, note_id)["status"] == "error"
+
+
+def test_reset_note_endpoint(client):
+    settings = Settings.load()
+    conn = db.get(settings.db_path)
+    note_id = client.note_id
+
+    # Set note to error with errors on stages
+    db.set_job(conn, note_id, "distill", state="error", error="Some error")
+    db.set_job(conn, note_id, "lens", state="error", error="Some error")
+    db.update_note(conn, note_id, status="error", error="Some error")
+
+    # Call reset endpoint
+    r = client.post(f"/api/notes/{note_id}/reset", headers=auth())
+    assert r.status_code == 200
+    assert r.json()["reset"] is True
+
+    # Note must have clean status and errors cleared
+    note = db.get_note(conn, note_id)
+    assert note["status"] == "ready"
+    assert note["error"] is None
+
+    jobs = {row["stage"]: dict(row) for row in db.get_jobs(conn, note_id)}
+    assert jobs["distill"]["error"] is None
+    assert jobs["lens"]["error"] is None
+

@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 
-import type { Api, Note, SearchHit } from "../api";
+import type { Api, Lens, Note, SearchHit } from "../api";
 import { cx, duration, relativeDate, ts } from "../util";
 import { ManualNoteModal } from "./ManualNoteModal";
+import { ProcessOptionsModal } from "./ProcessOptionsModal";
+import { SystemMonitor } from "./SystemMonitor";
+import { TutorialModal } from "./TutorialModal";
 import { Button, Chip, Icon, Spinner } from "./ui";
+
 
 const AUDIO_EXTENSIONS = [
   "mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "wma", "aiff",
@@ -12,22 +16,41 @@ const AUDIO_EXTENSIONS = [
 ];
 
 export function Sidebar({
-  api, notes, selectedId, onSelect, onImported, onOpenSettings, busyNotes, reload,
+  api, notes, lenses = [], selectedId, onSelect, onImported, onOpenSettings, onOpenTour, onOpenInsights, isInsightsOpen = false, busyNotes, reload,
+  onLockApp, isPasswordProtected = false, onDeleteNote,
 }: {
   api: Api;
   notes: Note[];
+  lenses?: Lens[];
   selectedId: number | null;
   onSelect: (id: number, seekMs?: number) => void;
   onImported: () => void;
   onOpenSettings: () => void;
+  onOpenTour?: () => void;
+  onOpenInsights?: () => void;
+  isInsightsOpen?: boolean;
   busyNotes: Set<number>;
   reload: () => void;
+  onLockApp?: () => void;
+  isPasswordProtected?: boolean;
+  onDeleteNote?: (id: number) => Promise<void> | void;
 }) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [importing, setImporting] = useState(false);
+  const [pendingFile, setPendingFile] = useState<string | null>(null);
+  const [loadedLenses, setLoadedLenses] = useState<Lens[]>([]);
   const [showWriteModal, setShowWriteModal] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (lenses.length === 0) {
+      void api.lenses().then(setLoadedLenses).catch(() => undefined);
+    }
+  }, [api, lenses]);
+
+  const effectiveLenses = lenses.length > 0 ? lenses : loadedLenses;
 
   // Full-text search across every note, debounced so typing stays smooth.
   useEffect(() => {
@@ -49,9 +72,19 @@ export function Sidebar({
       filters: [{ name: "Audio or video", extensions: AUDIO_EXTENSIONS }],
     });
     if (typeof picked !== "string") return;
+    setPendingFile(picked);
+  }
+
+  async function handleConfirmImport(opts: { style: string; lenses: string[] }) {
+    if (!pendingFile) return;
+    const filePath = pendingFile;
+    setPendingFile(null);
     setImporting(true);
     try {
-      const { note_id, duplicate } = await api.importFile(picked);
+      const { note_id, duplicate } = await api.importFile(filePath, {
+        lenses: opts.lenses,
+        style: opts.style,
+      });
       onSelect(note_id);
       onImported();
       if (duplicate) setError("Already in your library — opened the existing note.");
@@ -67,17 +100,50 @@ export function Sidebar({
       <div className="flex items-center gap-2 px-3 py-3 select-none-ui">
         <span className="text-[15px] font-semibold tracking-tight">Not3</span>
         <div className="flex-1" />
-        <Button onClick={onOpenSettings} title="Settings">
+        <Button id="tour-tutorial-btn" onClick={onOpenTour ?? (() => setShowTutorial(true))} title="Interactive UI Tour & Guide">
+          <Icon name="sparkles" className="h-3.5 w-3.5 text-[var(--accent)]" />
+        </Button>
+        <Button id="tour-settings-btn" onClick={onOpenSettings} title="Settings">
           <Icon name="settings" />
         </Button>
+        {isPasswordProtected && onLockApp && (
+          <Button id="tour-lock-btn" onClick={onLockApp} title="Lock Not3">
+            <Icon name="lock" />
+          </Button>
+        )}
       </div>
 
+      {/* Insights Hub Shortcut */}
+      {onOpenInsights && (
+        <button
+          type="button"
+          onClick={onOpenInsights}
+          id="tour-insights-hub-btn"
+          className={cx(
+            "mx-3 mb-2 flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-[12px] font-medium transition-colors",
+            isInsightsOpen
+              ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
+              : "border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-dim)] hover:border-[var(--accent)]/50 hover:text-[var(--text)]",
+          )}
+          title="Open cross-note intelligence, actions board, and lens lab"
+        >
+          <div className="flex items-center gap-1.5">
+            <Icon name="sparkles" className="h-3.5 w-3.5 text-[var(--accent)]" />
+            <span>Insights & Library Lab</span>
+          </div>
+          <span className="rounded bg-[var(--bg-raised)] px-1.5 py-0.2 text-[10px] text-[var(--text-faint)] border border-[var(--border)] font-semibold">
+            M7
+          </span>
+        </button>
+      )}
+
       <div className="flex gap-2 px-3 pb-2">
-        <Button variant="solid" onClick={() => void pickFile()} disabled={importing} className="flex-1">
+        <Button id="tour-add-recording" variant="solid" onClick={() => void pickFile()} disabled={importing} className="flex-1">
           {importing ? <Spinner /> : <Icon name="plus" className="h-3.5 w-3.5" />}
           {importing ? "Importing…" : "Add recording"}
         </Button>
         <Button
+          id="tour-write-note"
           variant="outline"
           onClick={() => setShowWriteModal(true)}
           title="Write manual note or paste shorthand"
@@ -93,6 +159,7 @@ export function Sidebar({
           className="pointer-events-none absolute left-5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-faint)]"
         />
         <input
+          id="tour-search-bar"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search everything said"
@@ -124,23 +191,50 @@ export function Sidebar({
               busy={busyNotes.has(note.id)}
               onSelect={() => onSelect(note.id)}
               onDelete={async () => {
-                await api.remove(note.id);
-                reload();
+                try {
+                  if (onDeleteNote) {
+                    await onDeleteNote(note.id);
+                  } else {
+                    await api.remove(note.id);
+                    reload();
+                  }
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : String(err));
+                }
               }}
             />
           ))
         )}
       </div>
 
+      <SystemMonitor api={api} variant="sidebar" />
+
       <ManualNoteModal
+
         api={api}
         isOpen={showWriteModal}
+        lenses={effectiveLenses}
         onClose={() => setShowWriteModal(false)}
         onCreated={(id) => {
           onSelect(id);
           onImported();
         }}
       />
+
+      <TutorialModal
+        isOpen={showTutorial}
+        onClose={() => setShowTutorial(false)}
+      />
+
+      {pendingFile && (
+        <ProcessOptionsModal
+          title="Import & Process Recording"
+          subtitle={pendingFile.split(/[\\/]/).pop() ?? pendingFile}
+          lenses={effectiveLenses}
+          onConfirm={(opts) => void handleConfirmImport(opts)}
+          onClose={() => setPendingFile(null)}
+        />
+      )}
     </aside>
   );
 }

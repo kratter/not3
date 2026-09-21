@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS notes (
     asr_backend  TEXT,                      -- cuda | metal | cpu
     asr_model    TEXT,
     error        TEXT,
+    plus_notes   TEXT    NOT NULL DEFAULT '',
     created_at   TEXT    NOT NULL,
     updated_at   TEXT    NOT NULL
 );
@@ -170,3 +171,16 @@ CREATE TRIGGER IF NOT EXISTS segments_au AFTER UPDATE ON segments BEGIN
     INSERT INTO segments_fts (segments_fts, rowid, text) VALUES ('delete', old.id, old.text);
     INSERT INTO segments_fts (rowid, text) VALUES (new.id, new.text);
 END;
+
+CREATE TABLE IF NOT EXISTS note_comments (
+    id           INTEGER PRIMARY KEY,
+    note_id      INTEGER NOT NULL REFERENCES notes (id) ON DELETE CASCADE,
+    author       TEXT    NOT NULL DEFAULT 'User',
+    content      TEXT    NOT NULL,
+    timestamp_ms INTEGER,
+    created_at   TEXT    NOT NULL,
+    updated_at   TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_comments_note ON note_comments (note_id, created_at);
+

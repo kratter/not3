@@ -1,0 +1,51 @@
+id: conflict_dynamics
+name: Conflict Dynamics & De-escalation
+version: 1
+description: >
+  Behavioral markers of relational tension, escalation triggers, defensive cycles,
+  and collaborative de-escalation bids in dialogue.
+
+model:
+  temperature: 0.15
+
+thresholds:
+  min_confidence: 0.6
+  max_per_chunk: 5
+
+disclaimer: >
+  Conversational dynamics markers for reflective communication improvement.
+
+guidance: |
+  Focus on the interpersonal dance: bids to escalate conflict vs bids to repair and de-escalate.
+
+categories:
+  - id: escalation_bid
+    label: Escalation Bid
+    definition: >
+      Language that raises the emotional stakes, intensifies hostility, introduces
+      past grievances, or uses provocative rhetoric.
+    positive_example: "You always pull this exact same trick whenever we talk about budgets, just like last quarter."
+    negative_example: "I disagree with this line item in the budget proposal."
+
+  - id: de_escalation_bid
+    label: De-escalation Bid
+    definition: >
+      An intentional effort to lower tension, introduce humor, acknowledge common ground,
+      or seek a pause during heated dialogue.
+    positive_example: "Let's take a quick five-minute break; we both want what's best for the project and we're getting tense."
+    negative_example: "Calm down right now, you're being ridiculous."
+
+  - id: blame_shifting
+    label: Blame Shifting
+    definition: >
+      Evading personal or team accountability by pointing fingers exclusively at others.
+    positive_example: "The outage wasn't our fault; if ops had read my email, none of this would have happened."
+    negative_example: "Our deployment failed due to an uncoordinated configuration change between dev and ops."
+
+  - id: demand_withdraw
+    label: Demand-Withdraw Pattern
+    definition: >
+      One person persistently pushing, questioning, or complaining while the other
+      evades, retreats, or shuts down dialogue.
+    positive_example: "You need to answer me right now, why won't you look at me or respond?"
+    negative_example: "Let's schedule thirty minutes tomorrow to go through these questions together."

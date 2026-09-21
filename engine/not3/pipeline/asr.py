@@ -164,6 +164,8 @@ def transcribe(
     *,
     backend: AsrBackend | None = None,
     on_progress: Callable[[float, str], None] | None = None,
+    check_cancelled: Callable[[], bool] | None = None,
+    on_proc: Callable[[subprocess.Popen | None], None] | None = None,
 ) -> Transcript:
     """Run whisper.cpp over `audio`.
 
@@ -182,9 +184,16 @@ def transcribe(
 
     last: Exception | None = None
     for candidate in ladder:
+        if check_cancelled and check_cancelled():
+            raise AsrError("Transcription cancelled by user")
         try:
-            return _run(audio, settings, candidate, on_progress)
+            return _run(
+                audio, settings, candidate, on_progress,
+                check_cancelled=check_cancelled, on_proc=on_proc
+            )
         except AsrError as exc:
+            if "cancelled" in str(exc).lower():
+                raise
             last = exc
             if on_progress:
                 on_progress(0.0, f"{candidate.name} backend failed, trying next")
@@ -197,6 +206,8 @@ def _run(
     settings: Settings,
     backend: AsrBackend,
     on_progress: Callable[[float, str], None] | None,
+    check_cancelled: Callable[[], bool] | None = None,
+    on_proc: Callable[[subprocess.Popen | None], None] | None = None,
 ) -> Transcript:
     with tempfile.TemporaryDirectory(prefix="not3-asr-") as tmp:
         prefix = Path(tmp) / "out"
@@ -211,22 +222,37 @@ def _run(
                 encoding="utf-8",
                 errors="replace",
             )
+            if on_proc:
+                on_proc(proc)
         except FileNotFoundError as exc:
             raise AsrError(f"whisper-cli not executable: {backend.binary}") from exc
 
-        stderr_tail: list[str] = []
-        assert proc.stderr is not None
-        for line in proc.stderr:
-            stderr_tail.append(line)
-            del stderr_tail[:-40]
-            if on_progress and (m := _PROGRESS.search(line)):
-                on_progress(int(m.group(1)) / 100.0, f"transcribing ({backend.name})")
+        try:
+            stderr_tail: list[str] = []
+            assert proc.stderr is not None
+            for line in proc.stderr:
+                if check_cancelled and check_cancelled():
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    raise AsrError("Transcription cancelled by user")
+                stderr_tail.append(line)
+                del stderr_tail[:-40]
+                if on_progress and (m := _PROGRESS.search(line)):
+                    on_progress(int(m.group(1)) / 100.0, f"transcribing ({backend.name})")
 
-        if proc.wait() != 0:
-            raise AsrError(
-                f"whisper-cli ({backend.name}) exited {proc.returncode}:\n"
-                + "".join(stderr_tail[-12:]).strip()
-            )
+            if proc.wait() != 0:
+                if check_cancelled and check_cancelled():
+                    raise AsrError("Transcription cancelled by user")
+                raise AsrError(
+                    f"whisper-cli ({backend.name}) exited {proc.returncode}:\n"
+                    + "".join(stderr_tail[-12:]).strip()
+                )
+        finally:
+            if on_proc:
+                on_proc(None)
 
         result = prefix.with_suffix(".json")
         if not result.is_file():

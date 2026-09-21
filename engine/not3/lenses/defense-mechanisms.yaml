@@ -1,0 +1,74 @@
+id: defense_mechanisms
+name: Defense Mechanisms
+version: 1
+description: >
+  Descriptive markers of psychological ego defenses observed in how thoughts,
+  setbacks, and interpersonal conflicts are framed. Strictly observational —
+  describes language choices, not clinical diagnosis.
+
+model:
+  temperature: 0.15
+
+thresholds:
+  min_confidence: 0.6
+  max_per_chunk: 5
+
+disclaimer: >
+  These are observations about conversational phrasing and framing, tied to
+  verbatim quotes. They are not a clinical or psychiatric diagnosis.
+
+guidance: |
+  Rules for identification:
+  1. Flag the framing in the language, never label the person.
+  2. Genuine factual accountability or legitimate grievances are NOT defense
+     mechanisms. Look for displacement, deflection, or revision of reality.
+  3. A retraction or self-correction ("actually, that was partly my fault")
+     neutralizes the defense. Do not flag the self-correction.
+
+categories:
+  - id: rationalization
+    label: Rationalization
+    definition: >
+      Constructing plausible, self-serving, or superficial explanations to
+      justify a failure, mistake, or unacceptable behavior while obscuring the true motive.
+    positive_example: "I didn't really want that promotion anyway, it's way too much administrative headache."
+    negative_example: "I didn't get the role because my technical presentation missed key architectural details."
+
+  - id: projection
+    label: Projection
+    definition: >
+      Attributing one's own unacknowledged feelings, motives, or faults onto someone else.
+    positive_example: "Why is everyone on this team so insecure and paranoid about deadlines?"
+    negative_example: "I'm feeling really stressed about whether we can meet next week's deadline."
+
+  - id: denial
+    label: Denial
+    definition: >
+      Refusing to acknowledge obvious, verifiable facts, risks, or consequences
+      as if they simply do not exist.
+    positive_example: "There is literally zero chance the system fails in production, it's not even worth testing."
+    negative_example: "We don't have enough test data yet, but initial smoke tests looked stable."
+
+  - id: displacement
+    label: Displacement
+    definition: >
+      Redirecting emotional hostility, frustration, or blame away from the actual
+      source onto an unrelated, safer, or less powerful target.
+    positive_example: "The VP rejected my roadmap, and now the intern's sloppy formatting is driving me insane."
+    negative_example: "I'm frustrated that leadership rejected the roadmap we worked on all month."
+
+  - id: intellectualization
+    label: Intellectualization
+    definition: >
+      Analyzing an emotionally distressing or painful situation in excessively
+      abstract, detached, or jargon-heavy terms to avoid feeling the emotion.
+    positive_example: "From a macroeconomic perspective, terminating half our division is merely an optimization of human resource expenditure."
+    negative_example: "Laying off half the team is devastating for everyone involved."
+
+  - id: reaction_formation
+    label: Reaction Formation
+    definition: >
+      Expressing exaggerated, overly agreeable, or sweet attitudes that seem
+      designed to mask underlying hostility, resentment, or disdain.
+    positive_example: "No, I am completely thrilled that my project was handed to Sarah, really, she deserves it so much!"
+    negative_example: "I'm disappointed they assigned the project to Sarah, but I'll support the transition."

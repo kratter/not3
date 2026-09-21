@@ -1,0 +1,63 @@
+name: Build macOS Release (Apple Silicon & Intel)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-macos:
+    runs-on: macos-14 # Apple Silicon (arm64, M-series) runner
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          brew install ffmpeg cmake
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Python dependencies
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          cd engine && uv sync
+
+      - name: Build whisper.cpp with Metal GPU acceleration
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          python3 scripts/fetch_whisper.py
+          python3 scripts/fetch_diarize.py
+
+      - name: Build standalone Python engine with PyInstaller
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          python3 scripts/build_engine.py --clean
+
+      - name: Install frontend dependencies
+        run: |
+          cd app && npm ci
+
+      - name: Build Tauri macOS application (.dmg and .app)
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          cd app && npm run tauri build
+
+      - name: Upload macOS Bundles (.dmg / .app)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Not3-macOS-AppleSilicon
+          path: |
+            app/src-tauri/target/release/bundle/dmg/*.dmg
+            app/src-tauri/target/release/bundle/macos/*.app
+          retention-days: 14

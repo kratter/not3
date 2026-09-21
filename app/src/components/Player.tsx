@@ -43,10 +43,26 @@ export function Player({
     [scrub],
   );
 
-  if (!player.src) return null;
+  if (!player.src) {
+    return (
+      <div
+        id="tour-player-bar"
+        className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--bg-raised)] px-4 py-2 text-[12px] text-[var(--text-faint)] select-none-ui"
+      >
+        <div className="flex items-center gap-2">
+          <Icon name="play" className="h-3 w-3 opacity-40" />
+          <span>Timeline Audio Player (Ready for playback)</span>
+        </div>
+        <span className="font-mono text-[11px]">00:00 / 00:00</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex shrink-0 items-center gap-3 border-t border-[var(--border)] bg-[var(--bg-raised)] px-4 py-2.5 select-none-ui">
+    <div
+      id="tour-player-bar"
+      className="flex shrink-0 items-center gap-3 border-t border-[var(--border)] bg-[var(--bg-raised)] px-4 py-2.5 select-none-ui"
+    >
       <audio ref={player.ref} src={player.src} preload="metadata" />
 
       <Button onClick={() => player.skip(-10000)} title="Back 10 seconds">

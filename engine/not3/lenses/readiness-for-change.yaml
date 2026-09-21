@@ -1,0 +1,51 @@
+id: readiness_for_change
+name: Readiness for Change (Motivational)
+version: 1
+description: >
+  Motivational Interviewing (MI) markers indicating psychological readiness,
+  ambivalence, resistance, or commitment toward personal or organizational change.
+
+model:
+  temperature: 0.15
+
+thresholds:
+  min_confidence: 0.6
+  max_per_chunk: 5
+
+disclaimer: >
+  Reflective motivational markers derived from conversational dialogue.
+
+guidance: |
+  Look for expressions of motivation, ambivalence, change talk, or sustain talk.
+
+categories:
+  - id: change_talk
+    label: Change Talk
+    definition: >
+      Statements expressing desire, ability, reason, or need to change a behavior,
+      workflow, or situation.
+    positive_example: "I really want to transition our team to modern CI/CD because manual releases are burning us out."
+    negative_example: "Our current release process is fine, why fix what isn't broken?"
+
+  - id: sustain_talk
+    label: Sustain Talk
+    definition: >
+      Statements arguing in favor of maintaining the status quo, defending current
+      habits, or minimizing the benefits of change.
+    positive_example: "The legacy monolith has worked for ten years, moving to cloud services will just introduce new risks."
+    negative_example: "We should carefully evaluate the migration costs before committing."
+
+  - id: ambivalence
+    label: Ambivalence
+    definition: >
+      Simultaneously feeling two contradictory ways about a change; actively oscillating
+      between pros and cons.
+    positive_example: "Part of me knows taking this lead role is great for my career, but another part is terrified of losing my coding time."
+    negative_example: "I've weighed the options and decided to accept the lead role."
+
+  - id: commitment_statement
+    label: Commitment Statement
+    definition: >
+      A clear, unequivocal verbal commitment or vow to take specific action toward change.
+    positive_example: "Starting Monday morning, I will implement daily standups with the team."
+    negative_example: "I might look into daily standups sometime next month."

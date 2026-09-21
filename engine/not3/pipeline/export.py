@@ -72,6 +72,8 @@ def render(
     *,
     lens_names: dict[str, str] | None = None,
     include_transcript: bool = True,
+    plus_notes: str = "",
+    comments: list[sqlite3.Row] | None = None,
 ) -> str:
     lens_names = lens_names or {}
     topics = [t.strip() for t in (sections.get("topics") or "").split(",") if t.strip()]
@@ -93,6 +95,17 @@ def render(
 
     if action_items := sections.get("action_items"):
         out += ["## Action items", "", action_items, ""]
+
+    if plus_notes:
+        out += ["## Plus Notes (Addendum)", "", plus_notes, ""]
+
+    if comments:
+        out += ["## User Comments", ""]
+        for c in comments:
+            t = dict(c) if isinstance(c, sqlite3.Row) else c
+            ts_label = f"[{_ts(t['timestamp_ms'])}] " if t.get("timestamp_ms") else ""
+            out.append(f"- **{t.get('author') or 'User'}** {ts_label}({t.get('created_at')}): {t.get('content')}")
+        out.append("")
 
     if highlights:
         out += ["## Highlights", ""]
@@ -158,6 +171,8 @@ def write(
         db.get_findings(conn, note_id),
         lens_names=lens_names,
         include_transcript=include_transcript,
+        plus_notes=db.get_plus_notes(conn, note_id),
+        comments=db.get_comments(conn, note_id),
     )
 
     dest_dir = Path(dest_dir)
@@ -165,3 +180,4 @@ def write(
     path = dest_dir / f"{safe_filename(note['title'] or note['source_name'])}.md"
     path.write_text(content, encoding="utf-8")
     return path
+

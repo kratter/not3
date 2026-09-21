@@ -73,33 +73,37 @@ def discover_asr_backends(root: Path | None = None) -> list[AsrBackend]:
     is decided by the platform rather than the path.
     """
     root = root or _repo_root()
-    vendor_dirs = [root / "vendor" / "whisper"]
-    if len(root.parents) >= 3:
-        vendor_dirs.append(root.parents[2] / "vendor" / "whisper")
-    vendor_dirs.extend([
+    vendor_dirs = [
+        root / "vendor" / "whisper",
         root.parent / "vendor" / "whisper",
         _data_dir() / "vendor" / "whisper",
-    ])
-    vendor = next((d for d in vendor_dirs if d.is_dir()), root / "vendor" / "whisper")
+    ]
+    if len(root.parents) >= 3:
+        vendor_dirs.append(root.parents[2] / "vendor" / "whisper")
+
     exe = "whisper-cli.exe" if sys.platform == "win32" else "whisper-cli"
     arch = host_arch()
 
-    candidates: list[tuple[str, Path]] = []
-    if sys.platform == "win32":
-        candidates = [("cuda", vendor / f"cuda-{arch}"), ("cpu", vendor / f"cpu-{arch}")]
-    elif sys.platform == "darwin":
-        label = "metal" if is_apple_silicon() else "cpu"
-        candidates = [(label, vendor / f"macos-{arch}"), (label, vendor / "macos")]
-    else:
-        candidates = [("cuda", vendor / f"cuda-{arch}"), ("cpu", vendor / f"cpu-{arch}")]
-
     found: list[AsrBackend] = []
     seen: set[Path] = set()
-    for name, directory in candidates:
-        binary = directory / exe
-        if binary.is_file() and binary not in seen:
-            seen.add(binary)
-            found.append(AsrBackend(name=name, binary=binary))
+
+    for v_dir in vendor_dirs:
+        if not v_dir.is_dir():
+            continue
+        candidates: list[tuple[str, Path]] = []
+        if sys.platform == "win32":
+            candidates = [("cuda", v_dir / f"cuda-{arch}"), ("cpu", v_dir / f"cpu-{arch}")]
+        elif sys.platform == "darwin":
+            label = "metal" if is_apple_silicon() else "cpu"
+            candidates = [(label, v_dir / f"macos-{arch}"), (label, v_dir / "macos")]
+        else:
+            candidates = [("cuda", v_dir / f"cuda-{arch}"), ("cpu", v_dir / f"cpu-{arch}")]
+
+        for name, directory in candidates:
+            binary = directory / exe
+            if binary.is_file() and binary not in seen:
+                seen.add(binary)
+                found.append(AsrBackend(name=name, binary=binary))
 
     # Last resort: whatever is on PATH.
     if not found:
@@ -126,7 +130,7 @@ class Settings:
     diarize_segmentation_model: str = "sherpa-onnx-pyannote-segmentation-3-0.onnx"
     diarize_embedding_model: str = "wespeaker_en_voxceleb_CAM++_LM.onnx"
     diarize_threshold: float = 0.5
-    diarize_threads: int = 2
+    diarize_threads: int = 6
 
     # LLM
     ollama_url: str = "http://127.0.0.1:11434"
@@ -151,9 +155,41 @@ class Settings:
 
     export_dir: Path | None = None
 
+    # App Security & Password Protection
+    password_hash: str = ""
+    password_salt: str = ""
+
     def __post_init__(self) -> None:
         if self.export_dir is None:
             self.export_dir = self.data_dir / "export"
+
+    def has_password(self) -> bool:
+        return bool(self.password_hash and self.password_salt)
+
+    def set_password(self, password: str) -> None:
+        import hashlib
+        import secrets
+        salt = secrets.token_hex(16)
+        key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000)
+        self.password_salt = salt
+        self.password_hash = key.hex()
+        self.save()
+
+    def verify_password(self, password: str) -> bool:
+        if not self.has_password():
+            return True
+        import hashlib
+        import hmac
+        key = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), self.password_salt.encode("utf-8"), 100_000
+        )
+        return hmac.compare_digest(key.hex(), self.password_hash)
+
+    def clear_password(self) -> None:
+        self.password_salt = ""
+        self.password_hash = ""
+        self.save()
+
 
     # -- derived paths ----------------------------------------------------
 
@@ -170,10 +206,13 @@ class Settings:
         override = os.environ.get("NOT3_MODELS_DIR")
         if override:
             return Path(override).expanduser()
-        candidates = [self.repo_root / "models"]
+        candidates = [
+            self.data_dir / "models",
+            self.repo_root / "models",
+            self.repo_root.parent / "models",
+        ]
         if len(self.repo_root.parents) >= 3:
             candidates.append(self.repo_root.parents[2] / "models")
-        candidates.append(self.data_dir / "models")
         for cand in candidates:
             if cand and cand.is_dir():
                 return cand
@@ -198,21 +237,40 @@ class Settings:
         from .llm.ollama import Client
         return Client(self.ollama_url, self.llm_timeout_s, self.max_num_ctx)
 
+    def find_model_file(self, filename: str, subfolder: str = "") -> Path:
+        """Look for a model file across data_dir, repo_root and bundled resource dirs."""
+        candidates = [
+            self.data_dir / "models",
+            self.repo_root / "models",
+            self.repo_root.parent / "models",
+        ]
+        if len(self.repo_root.parents) >= 3:
+            candidates.append(self.repo_root.parents[2] / "models")
+
+        for base in candidates:
+            target = base / subfolder / filename if subfolder else base / filename
+            if target.is_file():
+                return target
+
+        # Default fallback (e.g. for creating/downloading)
+        base = self.models_dir
+        return base / subfolder / filename if subfolder else base / filename
+
     def asr_model_path(self) -> Path:
-        return self.models_dir / self.asr_model
+        return self.find_model_file(self.asr_model)
 
     def vad_model_path(self) -> Path:
-        return self.models_dir / self.vad_model
+        return self.find_model_file(self.vad_model)
 
     @property
     def diarize_models_dir(self) -> Path:
         return self.models_dir / "diarize"
 
     def diarize_segmentation_path(self) -> Path:
-        return self.diarize_models_dir / self.diarize_segmentation_model
+        return self.find_model_file(self.diarize_segmentation_model, "diarize")
 
     def diarize_embedding_path(self) -> Path:
-        return self.diarize_models_dir / self.diarize_embedding_model
+        return self.find_model_file(self.diarize_embedding_model, "diarize")
 
     def ensure_dirs(self) -> None:
         for d in (

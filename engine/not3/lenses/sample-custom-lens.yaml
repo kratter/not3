@@ -1,0 +1,97 @@
+# ==============================================================================
+# Not3 Reference Custom Lens: Strategic Alignment & Team Dynamics
+# ==============================================================================
+# A lens defines an analytical perspective for reading transcripts.
+# The engine compiles this file into a strict JSON schema and chunk prompt,
+# queries the local Ollama LLM, and verifies every proposed finding against
+# the verbatim transcript using the fuzzy anchoring gate.
+#
+# Custom lenses can be placed in %LOCALAPPDATA%\Not3\lenses (Windows) or
+# ~/Library/Application Support/Not3/lenses (macOS).
+# No code changes, no recompilation, and no restart required!
+# Reusing an existing 'id' cleanly shadows any shipped built-in lens.
+# ==============================================================================
+
+# Unique alphanumeric identifier for this lens (used in database and API)
+id: strategic_alignment
+
+# Human-readable display name shown in the UI and exported markdown
+name: Strategic Alignment & Team Dynamics
+
+# Integer version. Incrementing this keeps historical findings distinct
+version: 1
+
+# High-level description of what patterns this lens observes
+description: >
+  Identifies explicit strategic commitments, unstated assumptions, constructive
+  convergence, and potential scope risks during team deliberations and planning sessions.
+
+# Model parameters
+model:
+  # Low temperature ensures deterministic, disciplined, and factual extraction
+  temperature: 0.15
+
+# Verification & Anchoring Thresholds
+thresholds:
+  # Minimum model confidence score (0.0 - 1.0) required to keep a finding
+  min_confidence: 0.65
+  # Maximum findings to extract per transcript chunk (prevents hallucination floods)
+  max_per_chunk: 5
+
+# Disclaimer appended to reports and markdown exports
+disclaimer: >
+  These observations represent linguistic patterns observed in transcript phrasing.
+  They are conversational diagnostics designed to assist team alignment, not clinical
+  or personal performance evaluations.
+
+# Core Prompt Guidance (Injected directly into the Ollama system prompt)
+guidance: |
+  Three foundational rules override everything else:
+
+  1. Flag the phrasing, never the individual.
+     Observe what was explicitly uttered in the text: "This statement conditions delivery
+     on external factors" is valid. "This person is uncooperative" is completely invalid.
+
+  2. Respect the distinction between an actual instance and a near-miss.
+     A line that merely mentions a deadline, talks about a difficult deliverable, or acknowledges
+     work is NOT an unstated assumption or scope creep. Use verdict: near_miss for lines that
+     are close in tone or subject but do not meet the strict criteria.
+
+  3. A retraction, concession, or clarification is a correction, not a pattern.
+     If a speaker walks back an earlier commitment or amends an assumption ("Actually, we don't
+     need that module in v1"), flag the original statement if appropriate, but never flag
+     the clarification.
+
+# Categories to extract
+categories:
+  - id: firm_commitment
+    label: Explicit Commitment
+    definition: >
+      An unequivocal, accountable declaration of ownership, deliverable, or deadline
+      expressed without ambiguous hedges or unassigned responsibility.
+    positive_example: "I will complete the migration scripts and have the test suite green by Thursday afternoon."
+    negative_example: "We should probably see if someone can look at those migration scripts sometime this week."
+
+  - id: unstated_assumption
+    label: Unstated Assumption
+    definition: >
+      A premise treated as guaranteed truth or self-evident fact without having been
+      validated, agreed upon, or backed by evidence.
+    positive_example: "Obviously the client's internal IT team will provide root cluster access before Monday."
+    negative_example: "We confirmed yesterday with their IT director that access will be provisioned by Monday."
+
+  - id: scope_expansion_risk
+    label: Scope Expansion Risk
+    definition: >
+      The spontaneous introduction of unbudgeted requirements, tangential features, or
+      speculative optimizations during an active delivery commitment.
+    positive_example: "While we're touching the auth module, we might as well rewrite the entire notification service in Rust."
+    negative_example: "Let's log this notification refactor as a potential candidate for Q4 roadmap grooming."
+
+  - id: constructive_synthesis
+    label: Constructive Synthesis
+    definition: >
+      A conversational turn that bridges opposing viewpoints, resolves an impasse, or
+      formulates a pragmatic compromise acknowledging both constraints.
+    positive_example: "If latency is the blocker for your team and security is Sarah's priority, running local caching satisfies both requirements."
+    negative_example: "I understand your point, but I still think my original proposal is better."

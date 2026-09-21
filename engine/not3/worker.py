@@ -34,6 +34,8 @@ class Job:
     source: Path | None = None  # set when the note still has to be ingested
     cancelled: bool = False
     submitted_at: float = field(default_factory=time.time)
+    lenses: tuple[str, ...] | None = None
+    style: str = "executive"
 
 
 class Worker:
@@ -47,7 +49,12 @@ class Worker:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock = threading.Lock()
         self._current: Job | None = None
+        self._current_proc: subprocess.Popen | None = None
         self._stop = threading.Event()
+
+    def _set_current_proc(self, proc: subprocess.Popen | None) -> None:
+        with self._lock:
+            self._current_proc = proc
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -56,8 +63,14 @@ class Worker:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
+        self._recover_orphans()
         self._thread = threading.Thread(target=self._run, name="not3-worker", daemon=True)
         self._thread.start()
+
+    def _recover_orphans(self) -> None:
+        """Clear any jobs left in 'running' or 'pending' state from an interrupted session."""
+        conn = db.get(self.settings.db_path)
+        db.reset_stale_jobs(conn)
 
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
@@ -67,28 +80,52 @@ class Worker:
 
     # -- submission --------------------------------------------------------
 
-    def submit(self, note_id: int, stages: Iterable[str] | None = None,
-               source: Path | None = None) -> Job:
-        job = Job(note_id=note_id, stages=tuple(stages or ALL_STAGES), source=source)
+    def submit(
+        self,
+        note_id: int,
+        stages: Iterable[str] | None = None,
+        source: Path | None = None,
+        lenses: Iterable[str] | None = None,
+        style: str = "executive",
+    ) -> Job:
+        if self._thread is None or not self._thread.is_alive():
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._run, name="not3-worker", daemon=True)
+            self._thread.start()
+
+        # If there's an existing job running or queued for this note, cancel it cleanly first
+        self.cancel(note_id, update_db=False)
+
+        job = Job(
+            note_id=note_id,
+            stages=tuple(stages or ALL_STAGES),
+            source=source,
+            lenses=tuple(lenses) if lenses is not None else None,
+            style=style,
+        )
         conn = db.get(self.settings.db_path)
+        with db.tx(conn):
+            conn.execute("DELETE FROM jobs WHERE note_id = ? AND stage = 'embed'", (note_id,))
+            conn.execute("UPDATE jobs SET error = NULL WHERE note_id = ?", (note_id,))
         db.init_jobs(conn, note_id)
         for stage in job.stages:
-            db.set_job(conn, note_id, stage, state="pending", progress=0.0, message="queued")
+            db.set_job(conn, note_id, stage, state="pending", progress=0.0, message="queued", error=None)
+        db.update_note(conn, note_id, status="processing", error=None)
         self._queue.put(job)
         self.emit({"type": "queued", "note_id": note_id, "stages": list(job.stages)})
         return job
 
-    def cancel(self, note_id: int) -> bool:
-        """Cancel a queued job, or ask a running one to stop after its stage.
-
-        A stage is not interrupted mid-flight: killing whisper.cpp or an LLM
-        call partway leaves nothing useful behind, so the cheapest correct
-        thing is to finish the stage and stop before the next one.
-        """
+    def cancel(self, note_id: int, update_db: bool = True) -> bool:
+        """Cancel a queued job, or interrupt a running one and update SQLite state."""
         with self._lock:
             if self._current and self._current.note_id == note_id:
                 self._current.cancelled = True
-                return True
+                if self._current_proc:
+                    try:
+                        self._current_proc.terminate()
+                        self._current_proc.kill()
+                    except Exception:
+                        pass
         pending: list[Job] = []
         try:
             while True:
@@ -101,6 +138,12 @@ class Worker:
             pass
         for job in pending:
             self._queue.put(job)
+
+        if update_db:
+            conn = db.get(self.settings.db_path)
+            db.cancel_note_jobs(conn, note_id)
+            self.emit({"type": "cancelled", "note_id": note_id})
+
         return True
 
     @property
@@ -190,22 +233,32 @@ class Worker:
 
         for stage in job.stages:
             if job.cancelled:
-                db.set_job(conn, job.note_id, stage, state="skipped", message="cancelled")
+                db.set_job(conn, job.note_id, stage, state="error", message="cancelled", error="Cancelled by user")
                 self.emit({"type": "cancelled", "note_id": job.note_id, "stage": stage})
                 continue
             begin(stage)
             try:
                 self._stage(stage, job, settings, conn, progress(stage))
             except Exception as exc:  # noqa: BLE001
-                finish(stage, "error", str(exc))
-                db.update_note(conn, job.note_id, status="error", error=str(exc))
-                self.emit({"type": "error", "note_id": job.note_id,
-                           "stage": stage, "error": str(exc)})
+                err_msg = "Cancelled by user" if job.cancelled else str(exc)
+                finish(stage, "error", err_msg)
+                db.update_note(conn, job.note_id, status="error", error=err_msg)
+                self.emit({"type": "cancelled" if job.cancelled else "error",
+                           "note_id": job.note_id, "stage": stage, "error": err_msg})
+                return
+            if job.cancelled:
+                finish(stage, "error", "Cancelled by user")
+                db.update_note(conn, job.note_id, status="error", error="Cancelled by user")
+                self.emit({"type": "cancelled", "note_id": job.note_id, "stage": stage})
                 return
             finish(stage)
 
-        db.update_note(conn, job.note_id, status="ready", error=None)
-        self.emit({"type": "done", "note_id": job.note_id})
+        if job.cancelled:
+            db.update_note(conn, job.note_id, status="error", error="Cancelled by user")
+            self.emit({"type": "cancelled", "note_id": job.note_id})
+        else:
+            db.update_note(conn, job.note_id, status="ready", error=None)
+            self.emit({"type": "done", "note_id": job.note_id})
 
     def _stage(self, stage: str, job: Job, settings: Settings, conn, report) -> None:
         from .llm.chunker import to_chunk_segments
@@ -224,7 +277,11 @@ class Worker:
             if not media.is_file():
                 raise FileNotFoundError(f"audio missing: {media}")
             backend = settings.pick_backend()
-            tr = transcribe(media, settings, backend=backend, on_progress=report)
+            tr = transcribe(
+                media, settings, backend=backend, on_progress=report,
+                check_cancelled=lambda: job.cancelled,
+                on_proc=self._set_current_proc,
+            )
             db.replace_segments(conn, job.note_id, [s.to_row() for s in tr.segments])
             db.update_note(conn, job.note_id, language=tr.language,
                            asr_backend=tr.backend, asr_model=tr.model)
@@ -236,7 +293,10 @@ class Worker:
                 return
             from .pipeline.diarize import diarize_note
             try:
-                num_spk = diarize_note(conn, job.note_id, settings, progress_cb=report)
+                num_spk = diarize_note(
+                    conn, job.note_id, settings, progress_cb=report,
+                    check_cancelled=lambda: job.cancelled,
+                )
                 report(1.0, f"{num_spk} speaker{'s' if num_spk != 1 else ''} found")
             except (FileNotFoundError, RuntimeError) as exc:
                 # If models haven't been downloaded yet, warn and continue pipeline
@@ -250,7 +310,7 @@ class Worker:
         client = settings.llm_client()
 
         if stage == "distill":
-            result = distill(segments, settings, client, on_progress=report)
+            result = distill(segments, settings, client, style=job.style, on_progress=report)
             db.replace_sections(conn, job.note_id, {
                 "summary": result.summary,
                 "key_points": "\n".join(
@@ -275,6 +335,9 @@ class Worker:
             disabled = {r["id"] for r in
                         conn.execute("SELECT id FROM lenses WHERE enabled = 0").fetchall()}
             lenses = [l for l in load_lenses(settings) if l.id not in disabled]
+            if job.lenses is not None:
+                wanted = set(job.lenses)
+                lenses = [l for l in lenses if l.id in wanted]
             has_speakers = any(r["speaker_label"] for r in rows)
             failures: list[str] = []
             for i, lens in enumerate(lenses):

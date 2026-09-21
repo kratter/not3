@@ -226,13 +226,63 @@ def load_lenses(settings: Settings) -> list[Lens]:
     return sorted(lenses.values(), key=lambda l: l.name)
 
 
+def validate_lens_yaml(yaml_str: str) -> tuple[bool, str, Lens | None]:
+    """Validate raw YAML string without writing it to disk."""
+    try:
+        data = yaml.safe_load(yaml_str)
+    except yaml.YAMLError as exc:
+        return False, f"Invalid YAML: {exc}", None
+    if not isinstance(data, dict):
+        return False, "Lens YAML must be a dictionary/mapping", None
+    try:
+        lens = parse_lens(data)
+        if not lens.categories:
+            return False, "Lens must define at least one category", None
+        return True, "", lens
+    except LensError as exc:
+        return False, str(exc), None
+
+
+def save_user_lens(settings: Settings, yaml_str: str) -> Lens:
+    """Validate and write a user lens into settings.user_lenses_dir."""
+    valid, err, lens = validate_lens_yaml(yaml_str)
+    if not valid or lens is None:
+        raise LensError(err)
+    settings.user_lenses_dir.mkdir(parents=True, exist_ok=True)
+    target_path = settings.user_lenses_dir / f"{lens.id}.yaml"
+    target_path.write_text(yaml_str, encoding="utf-8")
+    lens.path = target_path
+    return lens
+
+
+def delete_user_lens(settings: Settings, lens_id: str) -> bool:
+    """Delete a user lens file if present in settings.user_lenses_dir."""
+    target_path = settings.user_lenses_dir / f"{lens_id}.yaml"
+    if target_path.is_file():
+        target_path.unlink()
+        return True
+    # Also check .yml
+    alt_path = settings.user_lenses_dir / f"{lens_id}.yml"
+    if alt_path.is_file():
+        alt_path.unlink()
+        return True
+    return False
+
+
 def sync_registry(conn, settings: Settings) -> list[Lens]:
     """Reflect the lens files on disk into the database, preserving enablement."""
     from .. import db
 
     lenses = load_lenses(settings)
+    active_ids = {l.id for l in lenses}
     now = db.utcnow()
     with db.tx(conn):
+        # Remove any database lens rows whose files no longer exist on disk
+        existing = [r["id"] for r in conn.execute("SELECT id FROM lenses").fetchall()]
+        for eid in existing:
+            if eid not in active_ids:
+                conn.execute("DELETE FROM lenses WHERE id = ?", (eid,))
+
         for lens in lenses:
             conn.execute(
                 """INSERT INTO lenses (id, name, version, description, path,

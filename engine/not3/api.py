@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from . import db
 from .config import Settings, discover_asr_backends
+from .setup import SetupManager
 from .worker import ALL_STAGES, Worker
 
 # WebView2 serves the app from http://tauri.localhost on Windows and
@@ -50,6 +51,8 @@ class ImportRequest(BaseModel):
     path: str
     run: bool = True
     stages: list[str] | None = None
+    lenses: list[str] | None = None
+    style: str = "executive"
 
 
 class TextNoteRequest(BaseModel):
@@ -59,10 +62,13 @@ class TextNoteRequest(BaseModel):
     style: str = "formal"
     run: bool = True
     stages: list[str] | None = None
+    lenses: list[str] | None = None
 
 
 class RunRequest(BaseModel):
     stages: list[str] | None = None
+    lenses: list[str] | None = None
+    style: str = "executive"
 
 
 class NotePatch(BaseModel):
@@ -91,9 +97,74 @@ class SettingsPatch(BaseModel):
     export_dir: str | None = None
 
 
+class SetupStartRequest(BaseModel):
+    install_ollama: bool = True
+    pull_llm: bool = True
+
+
+class LensUploadRequest(BaseModel):
+    yaml: str
+
+
+class LibraryImportRequest(BaseModel):
+    format: str
+    version: int = 1
+    notes: list[dict] = []
+    speakers: list[dict] = []
+    segments: list[dict] = []
+    sections: list[dict] = []
+    highlights: list[dict] = []
+    findings: list[dict] = []
+
+
+class AskRequest(BaseModel):
+    query: str
+    note_ids: list[int] | None = None
+
+
+class VerifyPasswordRequest(BaseModel):
+    password: str
+
+
+class SetPasswordRequest(BaseModel):
+    password: str
+    current_password: str | None = None
+
+
+class RemovePasswordRequest(BaseModel):
+    current_password: str
+
+
+class NoteChatRequest(BaseModel):
+    prompt: str
+    history: list[dict] = []
+    model: str | None = None
+
+
+class SectionUpdateRequest(BaseModel):
+    content_md: str
+    model: str | None = None
+
+
+class PlusNotesRequest(BaseModel):
+    content: str
+
+
+class CreateCommentRequest(BaseModel):
+    content: str
+    author: str = "User"
+    timestamp_ms: int | None = None
+
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.load()
     settings.ensure_dirs()
+    try:
+        from .pipeline.diarize import _ensure_onnxruntime_dll
+        _ensure_onnxruntime_dll()
+    except Exception:
+        pass
     token = os.environ.get("NOT3_TOKEN", "")
 
     worker_ref: dict[str, Worker] = {}
@@ -118,8 +189,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     worker = Worker(settings)
     worker_ref["w"] = worker
+    setup_mgr = SetupManager(settings)
     app.state.settings = settings
     app.state.worker = worker
+    app.state.setup_mgr = setup_mgr
 
     def require_token(request: Request) -> None:
         if not token:
@@ -154,12 +227,90 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "asr_model": s.asr_model,
             "asr_model_present": s.asr_model_path().is_file(),
             "vad_model_present": s.vad_model_path().is_file(),
+            "diarize_models_present": (
+                s.diarize_segmentation_path().is_file() and s.diarize_embedding_path().is_file()
+            ),
             "ollama": {"url": s.ollama_url, "available": ollama_up,
                        "models": client.models() if ollama_up else []},
             "worker": worker.status(),
             "data_dir": str(s.data_dir),
             "export_dir": str(s.export_dir),
         }
+
+    @app.get("/api/system/metrics", dependencies=guard)
+    def system_metrics() -> dict:
+        from .system import get_system_metrics
+        s = Settings.load()
+        return get_system_metrics(s, worker.status())
+
+    # -- app security & password ------------------------------------------
+
+    @app.get("/api/auth/status")
+    def auth_status() -> dict:
+        s = Settings.load()
+        return {"password_required": s.has_password()}
+
+    @app.post("/api/auth/verify")
+    def auth_verify(req: VerifyPasswordRequest) -> dict:
+        s = Settings.load()
+        return {"ok": s.verify_password(req.password)}
+
+    @app.post("/api/auth/set_password", dependencies=guard)
+    def auth_set_password(req: SetPasswordRequest) -> dict:
+        s = Settings.load()
+        if s.has_password() and not s.verify_password(req.current_password or ""):
+            raise HTTPException(status_code=403, detail="Current password incorrect")
+        if not req.password or len(req.password.strip()) == 0:
+            raise HTTPException(status_code=400, detail="Password cannot be empty")
+        s.set_password(req.password)
+        app.state.settings = s
+        worker.settings = s
+        return {"ok": True}
+
+    @app.post("/api/auth/remove_password", dependencies=guard)
+    def auth_remove_password(req: RemovePasswordRequest) -> dict:
+        s = Settings.load()
+        if not s.verify_password(req.current_password or ""):
+            raise HTTPException(status_code=403, detail="Current password incorrect")
+        s.clear_password()
+        app.state.settings = s
+        worker.settings = s
+        return {"ok": True}
+
+
+    # -- setup and components ---------------------------------------------
+
+    @app.get("/api/setup/status", dependencies=guard)
+    def get_setup_status() -> dict:
+        setup_mgr.settings = Settings.load()
+        return setup_mgr.get_status()
+
+    @app.post("/api/setup/start", dependencies=guard)
+    async def start_setup(req: SetupStartRequest | None = None) -> dict:
+        actual_req = req or SetupStartRequest()
+        setup_mgr.settings = Settings.load()
+        loop = asyncio.get_running_loop()
+        loop.create_task(setup_mgr.start_setup(
+            install_ollama=actual_req.install_ollama,
+            pull_llm=actual_req.pull_llm,
+        ))
+        return {"started": True}
+
+    @app.get("/api/setup/events", dependencies=guard)
+    async def setup_events() -> StreamingResponse:
+        async def event_generator():
+            async for evt in setup_mgr.subscribe():
+                yield f"data: {json.dumps(evt)}\n\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.get("/api/settings", dependencies=guard)
     def get_settings() -> dict:
@@ -227,7 +378,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db.init_jobs(c, note_id)
         db.set_job(c, note_id, "ingest", state="done", progress=1.0)
         if req.run:
-            worker.submit(note_id, req.stages or ALL_STAGES)
+            worker.submit(note_id, req.stages or ALL_STAGES, lenses=req.lenses, style=req.style)
         return {"note_id": note_id, "duplicate": False}
 
     @app.post("/api/notes/text", dependencies=guard)
@@ -310,7 +461,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         if req.run:
             stages = req.stages or ["distill", "highlight", "lens", "export"]
-            worker.submit(note_id, stages)
+            worker.submit(note_id, stages, lenses=req.lenses, style=req.style)
 
         return {"note_id": note_id, "duplicate": False}
 
@@ -327,7 +478,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "speakers": rows_to_dicts(c.execute(
                 "SELECT * FROM speakers WHERE note_id = ? ORDER BY label",
                 (note_id,)).fetchall()),
+            "plus_notes": db.get_plus_notes(c, note_id),
+            "comments": rows_to_dicts(db.get_comments(c, note_id)),
         }
+
 
     @app.patch("/api/notes/{note_id}", dependencies=guard)
     def patch_note(note_id: int, patch: NotePatch) -> dict:
@@ -341,7 +495,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.delete("/api/notes/{note_id}", dependencies=guard)
     def delete_note(note_id: int) -> dict:
-        db.delete_note(conn(), note_id)
+        worker.cancel(note_id, update_db=False)
+        c = conn()
+        note = db.get_note(c, note_id)
+        if note and note["media_path"]:
+            try:
+                p = Path(note["media_path"])
+                if p.is_file():
+                    p.unlink()
+            except Exception:
+                pass
+        db.delete_note(c, note_id)
         return {"deleted": note_id}
 
     @app.get("/api/notes/{note_id}/segments", dependencies=guard)
@@ -381,12 +545,191 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         unknown = set(stages) - set(ALL_STAGES)
         if unknown:
             raise HTTPException(status_code=400, detail=f"unknown stages: {sorted(unknown)}")
-        worker.submit(note_id, stages)
+        worker.submit(note_id, stages, lenses=req.lenses, style=req.style)
         return {"queued": note_id, "stages": list(stages)}
+
+    @app.get("/api/notes/{note_id}/export", dependencies=guard)
+    def get_note_export(note_id: int) -> dict:
+        from .pipeline import export as export_mod
+        c = conn()
+        note = db.get_note(c, note_id)
+        if note is None:
+            raise HTTPException(status_code=404, detail="no such note")
+        lens_names = {
+            r["id"]: r["name"] for r in c.execute("SELECT id, name FROM lenses").fetchall()
+        }
+        content = export_mod.render(
+            note,
+            db.get_segments(c, note_id),
+            db.get_sections(c, note_id),
+            db.get_highlights(c, note_id),
+            db.get_findings(c, note_id),
+            lens_names=lens_names,
+            plus_notes=db.get_plus_notes(c, note_id),
+            comments=db.get_comments(c, note_id),
+        )
+        name = export_mod.safe_filename(note["title"] or note["source_name"])
+        export_path = settings.export_dir / f"{name}.md"
+        return {
+            "note_id": note_id,
+            "title": note["title"] or note["source_name"],
+            "filename": f"{name}.md",
+            "path": str(export_path),
+            "exists": export_path.is_file(),
+            "content": content,
+        }
+
+    @app.post("/api/notes/{note_id}/export", dependencies=guard)
+    def write_note_export(note_id: int) -> dict:
+        from .pipeline import export as export_mod
+        c = conn()
+        note = db.get_note(c, note_id)
+        if note is None:
+            raise HTTPException(status_code=404, detail="no such note")
+        path = export_mod.write(c, note_id, settings.export_dir)
+        content = path.read_text(encoding="utf-8")
+        return {
+            "note_id": note_id,
+            "path": str(path),
+            "filename": path.name,
+            "content": content,
+        }
+
+    # -- note AI chat & reformatting --------------------------------------
+
+    @app.post("/api/notes/{note_id}/chat", dependencies=guard)
+    def chat_note(note_id: int, req: NoteChatRequest) -> dict:
+        c = conn()
+        note = db.get_note(c, note_id)
+        if note is None:
+            raise HTTPException(status_code=404, detail="no such note")
+
+        s = Settings.load()
+        model = req.model or s.model_distill
+
+        segments = db.get_segments(c, note_id)
+        sections = db.get_sections(c, note_id)
+        plus_notes = db.get_plus_notes(c, note_id)
+
+        transcript_lines = []
+        for seg in segments[:300]:
+            spk = seg["speaker_name"] or seg["speaker_label"] or "Speaker"
+            transcript_lines.append(f"{spk}: {seg['text']}")
+        transcript_snippet = "\n".join(transcript_lines)
+
+        sections_snippet = "\n\n".join(f"### {k.replace('_', ' ').title()}\n{v}" for k, v in sections.items())
+
+        system_prompt = (
+            "You are an expert AI editor, researcher, and clinical/executive intelligence assistant in Not3.\n"
+            "You help the user review, query, polish, or reformat this audio note.\n"
+            "Whenever asked to reformat, restructure, or rewrite the text (e.g. into an executive summary, bullet points, SOAP format, formal minutes, or polished prose):\n"
+            "- Provide ready-to-use, clean Markdown with clear headings and formatting.\n"
+            "- Do NOT include unnecessary conversational preamble; provide the formatted text directly so it can be pasted or applied to the note.\n\n"
+            f"NOTE TITLE: {note['title'] or note['source_name']}\n"
+            f"DURATION: {note['duration_ms'] // 1000}s\n\n"
+            f"EXISTING SECTIONS:\n{sections_snippet or '(None yet)'}\n\n"
+            f"PLUS NOTES (USER ADDENDUM):\n{plus_notes or '(None)'}\n\n"
+            f"TRANSCRIPT EXCERPT:\n{transcript_snippet or '(No transcript available)'}"
+        )
+
+        messages = [{"role": "system", "content": system_prompt}]
+        for m in req.history[-6:]:
+            if m.get("role") in {"user", "assistant"} and m.get("content"):
+                messages.append({"role": m["role"], "content": m["content"]})
+        messages.append({"role": "user", "content": req.prompt})
+
+        client = s.llm_client()
+        reply = ""
+        if client.available():
+            try:
+                reply = client.chat(model=model, messages=messages)
+            except Exception as e:
+                reply = f"Error calling Ollama model '{model}': {e}"
+        else:
+            reply = (
+                f"Ollama is currently unreachable at {s.ollama_url}. "
+                f"Please ensure Ollama is running and model '{model}' is pulled to use AI Chat & Reformat."
+            )
+
+        return {"reply": reply, "model": model}
+
+    # -- note sections update ---------------------------------------------
+
+    @app.put("/api/notes/{note_id}/sections/{kind}", dependencies=guard)
+    def update_note_section(note_id: int, kind: str, req: SectionUpdateRequest) -> dict:
+        c = conn()
+        if db.get_note(c, note_id) is None:
+            raise HTTPException(status_code=404, detail="no such note")
+        if kind not in {"summary", "key_points", "action_items", "topics"}:
+            raise HTTPException(status_code=400, detail=f"invalid section kind: {kind}")
+        db.upsert_section(c, note_id, kind, req.content_md, req.model or "ai-chat")
+        return {"ok": True, "kind": kind, "content_md": req.content_md}
+
+    # -- plus notes -------------------------------------------------------
+
+    @app.get("/api/notes/{note_id}/plus_notes", dependencies=guard)
+    def get_plus_notes(note_id: int) -> dict:
+        c = conn()
+        if db.get_note(c, note_id) is None:
+            raise HTTPException(status_code=404, detail="no such note")
+        return {"plus_notes": db.get_plus_notes(c, note_id)}
+
+    @app.put("/api/notes/{note_id}/plus_notes", dependencies=guard)
+    def update_plus_notes(note_id: int, req: PlusNotesRequest) -> dict:
+        c = conn()
+        if db.get_note(c, note_id) is None:
+            raise HTTPException(status_code=404, detail="no such note")
+        db.update_plus_notes(c, note_id, req.content)
+        return {"ok": True, "plus_notes": req.content}
+
+    # -- note comments ----------------------------------------------------
+
+    @app.get("/api/notes/{note_id}/comments", dependencies=guard)
+    def list_note_comments(note_id: int) -> list[dict]:
+        c = conn()
+        if db.get_note(c, note_id) is None:
+            raise HTTPException(status_code=404, detail="no such note")
+        return rows_to_dicts(db.get_comments(c, note_id))
+
+    @app.post("/api/notes/{note_id}/comments", dependencies=guard)
+    def add_note_comment(note_id: int, req: CreateCommentRequest) -> dict:
+        c = conn()
+        if db.get_note(c, note_id) is None:
+            raise HTTPException(status_code=404, detail="no such note")
+        cid = db.create_comment(
+            c,
+            note_id=note_id,
+            content=req.content,
+            author=req.author,
+            timestamp_ms=req.timestamp_ms,
+        )
+        row = c.execute("SELECT * FROM note_comments WHERE id = ?", (cid,)).fetchone()
+        return dict(row)
+
+    @app.delete("/api/notes/{note_id}/comments/{comment_id}", dependencies=guard)
+    def delete_note_comment(note_id: int, comment_id: int) -> dict:
+        c = conn()
+        db.delete_comment(c, comment_id)
+        return {"ok": True, "deleted": comment_id}
 
     @app.post("/api/notes/{note_id}/cancel", dependencies=guard)
     def cancel(note_id: int) -> dict:
-        return {"cancelled": worker.cancel(note_id)}
+        c = conn()
+        if db.get_note(c, note_id) is None:
+            raise HTTPException(status_code=404, detail="no such note")
+        worker.cancel(note_id)
+        return {"cancelled": True, "note_id": note_id}
+
+    @app.post("/api/notes/{note_id}/reset", dependencies=guard)
+    def reset_note_endpoint(note_id: int) -> dict:
+        c = conn()
+        if db.get_note(c, note_id) is None:
+            raise HTTPException(status_code=404, detail="no such note")
+        worker.cancel(note_id, update_db=False)
+        db.reset_note(c, note_id)
+        worker.emit({"type": "stage", "note_id": note_id, "stage": "_", "state": "done"})
+        return {"reset": True, "note_id": note_id}
+
 
     @app.patch("/api/speakers/{speaker_id}", dependencies=guard)
     def rename_speaker(speaker_id: int, patch: SpeakerPatch) -> dict:
@@ -505,6 +848,121 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 GROUP BY lens_id, model
                 ORDER BY lens_id
                 LIMIT ?""", (limit,)).fetchall())
+
+    @app.post("/api/lenses", dependencies=guard)
+    def upload_lens(req: LensUploadRequest) -> dict:
+        from .pipeline.lens import save_user_lens, sync_registry, LensError
+        s = Settings.load()
+        try:
+            lens = save_user_lens(s, req.yaml)
+        except LensError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        c = conn()
+        sync_registry(c, s)
+        return {
+            "id": lens.id,
+            "name": lens.name,
+            "version": lens.version,
+            "description": lens.description,
+            "disclaimer": lens.disclaimer,
+            "enabled": True,
+            "builtin": False,
+            "path": str(lens.path or ""),
+            "categories": [
+                {"id": c_.id, "label": c_.label, "definition": c_.definition}
+                for c_ in lens.categories
+            ],
+        }
+
+    @app.delete("/api/lenses/{lens_id}", dependencies=guard)
+    def remove_lens(lens_id: str) -> dict:
+        from .pipeline.lens import delete_user_lens, sync_registry, load_lenses
+        s = Settings.load()
+        deleted = delete_user_lens(s, lens_id)
+        if not deleted:
+            builtins = {l.id for l in load_lenses(s) if l.path and l.path.parent == s.lenses_dir}
+            if lens_id in builtins:
+                raise HTTPException(status_code=400, detail="Cannot delete shipped built-in lens.")
+            raise HTTPException(status_code=404, detail="No such custom lens.")
+        c = conn()
+        sync_registry(c, s)
+        return {"deleted": lens_id}
+
+    @app.get("/api/lenses/{lens_id}/yaml", dependencies=guard)
+    def get_lens_yaml(lens_id: str) -> dict:
+        from .pipeline.lens import load_lenses
+        s = Settings.load()
+        lenses = {l.id: l for l in load_lenses(s)}
+        lens = lenses.get(lens_id)
+        if not lens or not lens.path or not lens.path.is_file():
+            raise HTTPException(status_code=404, detail="Lens file not found.")
+        return {
+            "id": lens.id,
+            "name": lens.name,
+            "path": str(lens.path),
+            "yaml": lens.path.read_text(encoding="utf-8"),
+        }
+
+    @app.get("/api/lenses/sample-template", dependencies=guard)
+    def get_sample_lens_template() -> dict:
+        s = Settings.load()
+        sample_path = s.lenses_dir / "sample-custom-lens.yaml"
+        if sample_path.is_file():
+            text = sample_path.read_text(encoding="utf-8")
+        else:
+            text = "# Sample Lens Template\nid: sample_lens\nname: Sample Lens\nversion: 1\n..."
+        return {"filename": "sample-custom-lens.yaml", "yaml": text}
+
+    # -- library import/export & reference sample -------------------------
+
+    @app.post("/api/library/sample", dependencies=guard)
+    def seed_sample() -> dict:
+        from .sample_data import seed_sample_library
+        s = Settings.load()
+        c = conn()
+        notes = seed_sample_library(c, s)
+        return {"seeded": True, "notes": notes}
+
+    @app.get("/api/library/export", dependencies=guard)
+    def export_library() -> dict:
+        from .sample_data import export_library_json
+        return export_library_json(conn())
+
+    @app.post("/api/library/import", dependencies=guard)
+    def import_library(req: LibraryImportRequest) -> dict:
+        from .sample_data import import_library_json
+        try:
+            return import_library_json(conn(), req.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    # -- insights & M7 ----------------------------------------------------
+
+    @app.get("/api/insights/actions", dependencies=guard)
+    def get_actions() -> list[dict]:
+        return db.get_all_action_items(conn())
+
+    @app.get("/api/insights/patterns", dependencies=guard)
+    def get_patterns() -> dict:
+        return db.get_pattern_matrix(conn())
+
+    @app.get("/api/insights/search", dependencies=guard)
+    def get_insights_search(
+        q: str | None = None,
+        lens_id: str | None = None,
+        category: str | None = None,
+        speaker_id: int | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        return db.search_insights(
+            conn(), q=q, lens_id=lens_id, category=category, speaker_id=speaker_id, limit=limit
+        )
+
+    @app.post("/api/insights/ask", dependencies=guard)
+    def ask_library(req: AskRequest) -> dict:
+        from .insights import synthesize_library_query
+        s = Settings.load()
+        return synthesize_library_query(conn(), s, req.query, req.note_ids)
 
     # -- search ------------------------------------------------------------
 

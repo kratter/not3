@@ -50,6 +50,25 @@ fn random_token() -> String {
 
 /// Locate the bundled engine, or fall back to a dev checkout.
 fn engine_command(app: &AppHandle) -> Result<Command, String> {
+    // Explicit override, for running against an engine started by hand.
+    if let Ok(custom) = std::env::var("NOT3_ENGINE_EXE") {
+        return Ok(Command::new(custom));
+    }
+
+    // Dev checkout: in debug mode, drive the uv environment directly so
+    // there is no build step between editing Python and seeing it in the app.
+    if cfg!(debug_assertions) {
+        let engine_dir = dev_engine_dir();
+        if engine_dir.join("pyproject.toml").is_file() {
+            let mut cmd = Command::new("uv");
+            cmd.arg("run")
+                .arg("--project")
+                .arg(&engine_dir)
+                .arg("not3-engine");
+            return Ok(cmd);
+        }
+    }
+
     // Bundled: PyInstaller onedir copied in through `bundle.resources`.
     let exe_name = if cfg!(windows) { "not3-engine.exe" } else { "not3-engine" };
     if let Ok(path) = app
@@ -61,27 +80,15 @@ fn engine_command(app: &AppHandle) -> Result<Command, String> {
         }
     }
 
-    // Explicit override, for running against an engine started by hand.
-    if let Ok(custom) = std::env::var("NOT3_ENGINE_EXE") {
-        return Ok(Command::new(custom));
-    }
-
-    // Dev checkout: drive the uv environment directly so there is no build
-    // step between editing Python and seeing it in the app.
-    if cfg!(debug_assertions) {
-        let engine_dir = dev_engine_dir();
-        if engine_dir.join("pyproject.toml").is_file() {
-            let mut cmd = Command::new("uv");
-            cmd.arg("run")
-                .arg("--project")
-                .arg(&engine_dir)
-                .arg("not3-engine");
-            return Ok(cmd);
-        }
-        return Err(format!(
-            "No engine found. Looked for a bundled binary and for a dev checkout at {}",
-            engine_dir.display()
-        ));
+    // Fallback: drive dev environment if bundled binary is missing
+    let engine_dir = dev_engine_dir();
+    if engine_dir.join("pyproject.toml").is_file() {
+        let mut cmd = Command::new("uv");
+        cmd.arg("run")
+            .arg("--project")
+            .arg(&engine_dir)
+            .arg("not3-engine");
+        return Ok(cmd);
     }
 
     Err("No engine binary found in app resources.".into())
@@ -156,6 +163,15 @@ pub fn spawn(app: &AppHandle) -> Result<Endpoint, String> {
         let _ = child.kill();
         "engine started but never reported a port".to_string()
     })?;
+
+    // Drain stdout so engine prints or C-library outputs never fill the pipe buffer and block.
+    let handle_stdout = app.clone();
+    std::thread::spawn(move || {
+        for line in reader.lines().map_while(Result::ok) {
+            eprintln!("[engine stdout] {line}");
+            let _ = handle_stdout.emit("engine://stdout", line);
+        }
+    });
 
     // Drain stderr so a chatty engine cannot fill the pipe buffer and block.
     if let Some(stderr) = child.stderr.take() {
