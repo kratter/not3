@@ -22,6 +22,24 @@ echo   Not3
 echo   ----
 echo.
 
+rem ----------------------------------------------------------- scoop path ---
+rem  Scoop writes tool locations into the User PATH registry key, but the
+rem  current shell session may pre-date that change.  Prepend the well-known
+rem  Scoop app directories so that node, cargo, uv and ffmpeg are always
+rem  visible without requiring the user to open a new terminal.
+
+set "SCOOP_BASE=%USERPROFILE%\scoop\apps"
+if exist "%SCOOP_BASE%\nodejs-lts\current\node.exe" (
+  set "PATH=%SCOOP_BASE%\nodejs-lts\current\bin;%SCOOP_BASE%\nodejs-lts\current;%PATH%"
+)
+if exist "%SCOOP_BASE%\rust-msvc\current\bin\cargo.exe" (
+  set "PATH=%SCOOP_BASE%\rust-msvc\current\bin;%PATH%"
+)
+rem uv and ffmpeg are shimmed through scoop\shims which is usually already on PATH.
+if exist "%USERPROFILE%\scoop\shims\uv.exe" (
+  set "PATH=%USERPROFILE%\scoop\shims;%PATH%"
+)
+
 rem ---------------------------------------------------------------- tools ---
 
 set "MISSING="
@@ -29,21 +47,18 @@ set "MISSING="
 where node >nul 2>&1
 if errorlevel 1 (
   echo   [x] Node.js not found.
-  echo       Install it from https://nodejs.org
   set "MISSING=1"
 )
 
 where uv >nul 2>&1
 if errorlevel 1 (
   echo   [x] uv not found.
-  echo       Install with:  winget install astral-sh.uv
   set "MISSING=1"
 )
 
 where ffmpeg >nul 2>&1
 if errorlevel 1 (
   echo   [x] ffmpeg not found.
-  echo       Install with:  winget install Gyan.FFmpeg
   set "MISSING=1"
 )
 
@@ -51,14 +66,13 @@ if not "%MODE%"=="doctor" (
   where cargo >nul 2>&1
   if errorlevel 1 (
     echo   [x] Rust not found.
-    echo       Install it from https://rustup.rs
     set "MISSING=1"
   )
 )
 
 if defined MISSING (
   echo.
-  echo   Install what is marked above, then run this again.
+  echo   Run install-prereqs.bat to install missing tools, then try again.
   echo.
   pause
   exit /b 1
@@ -184,6 +198,19 @@ if /i "%MODE%"=="build" (
   echo.
   echo   [*] Building Tauri release binary and NSIS installer...
   echo.
+  rem -- Init MSVC env so link.exe can find Windows SDK libs (e.g. dbghelp.lib) --
+  set "VCVARS="
+  for /f "usebackq tokens=*" %%I in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -products * -all -prerelease -property installationPath 2^>nul`) do (
+    if exist "%%I\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%I\VC\Auxiliary\Build\vcvars64.bat"
+  )
+  if defined VCVARS (
+    call "!VCVARS!" >nul
+    echo   [ok] MSVC environment loaded
+    echo.
+  ) else (
+    echo   [!] vcvars64.bat not found. link.exe may not find Windows SDK libs.
+    echo.
+  )
   pushd app
   call npm run tauri build
   set "RC=!errorlevel!"
